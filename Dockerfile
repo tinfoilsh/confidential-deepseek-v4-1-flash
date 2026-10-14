@@ -32,7 +32,10 @@ COPY scripts/bake-artifacts.py scripts/flashinfer-artifacts.json /tmp/tinfoil-ar
 RUN FLASHINFER_CUDA_ARCH_LIST=10.3a python3 /tmp/tinfoil-artifacts/bake-artifacts.py && \
     rm -rf /tmp/tinfoil-artifacts
 
-COPY autotune/ /opt/tinfoil/autotune/
+ARG AUTOTUNE_PRESET_SHA256=9c83b7daebe5d8e258bccefef3e6984e3eedbd9d02aa006e8ef360a29f52afe1
+ADD https://raw.githubusercontent.com/tinfoilsh/confidential-deepseek-v4-1-flash/4f1e4fbfeb7abc01d20f1a9192278724b426716f/autotune/b300-tp4-static5.json /opt/tinfoil/autotune/b300-tp4-static5.json
+RUN echo "${AUTOTUNE_PRESET_SHA256}  /opt/tinfoil/autotune/b300-tp4-static5.json" | sha256sum -c - && \
+    chmod 644 /opt/tinfoil/autotune/b300-tp4-static5.json
 COPY scripts/seed-autotune.py scripts/entrypoint.sh /opt/tinfoil/
 COPY --from=sidecar /inference-sidecar /opt/tinfoil/inference-sidecar
 ENTRYPOINT ["/opt/tinfoil/entrypoint.sh", "vllm", "serve"]

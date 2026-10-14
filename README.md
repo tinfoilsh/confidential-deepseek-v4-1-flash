@@ -24,7 +24,8 @@ Follows the [upstream vLLM recipe](https://recipes.vllm.ai/deepseek-ai/DeepSeek-
 - FlashInfer cubins verified and baked at build time (the container runs offline).
 - Released reasoning-effort mappings retained across the vLLM upgrade.
 
-The image seeds 198 measured FlashInfer choices into the matching native
+The build fetches the measured FlashInfer preset from a pinned commit and
+verifies its SHA-256. The image seeds its 198 choices into the matching native
 configuration namespace on an empty cache. Existing tuning is preserved.
 FlashInfer validates GPU and library metadata before loading the preset, and
 configuration changes select a different namespace. Cold-cache profiling policy
