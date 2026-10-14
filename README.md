@@ -33,8 +33,3 @@ is retained so startup can reuse these choices under CC.
 The configuration prioritizes interactive coding at concurrency 1–8. Static-five
 verification trades some throughput at concurrency 32 and short-prompt
 time-to-first-token for those gains.
-
-Run the transfer and tactic checks on a B300 with `VLLM_DISABLE_UVA=1`,
-`VLLM_TINFOIL_CC_OPTIMIZATIONS=1`, `VLLM_TINFOIL_DEEPSEEK_TARGET_TACTIC=1`, and
-`DEEPSEEK_CC_TRANSFER_POLICY=B` in a virtual environment with access to the
-image's Python packages: `python -m pytest tests/`.

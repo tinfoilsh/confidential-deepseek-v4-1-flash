@@ -9,7 +9,6 @@ import os
 from pathlib import Path, PurePosixPath
 
 CONTEXT = Path(__file__).resolve().parent
-REPORT_PATH = Path("/opt/tinfoil/flashinfer-artifacts-report.json")
 DOWNLOAD_WORKERS = 4
 FLASHINFER_VERSION = "0.7.0.post1"
 TARGET_CPU_ARCH = "x86_64"
@@ -17,7 +16,6 @@ TARGET_DSL_ARCH = "sm_103a"
 EXPECTED_GENERIC_ENTRIES = 42738
 EXPECTED_DSL_ENTRIES = 368
 EXPECTED_DSL_BYTES = 149782912
-CUDA_HEADER_NAMES = ("cusparse.h", "cublas_v2.h", "cusolverDn.h")
 GEMM_MODULES = (
     "trtllm_gemm",
     "trtllm_gemm_sm107",
@@ -67,7 +65,6 @@ def main():
     if flashinfer.__version__ != FLASHINFER_VERSION:
         raise RuntimeError(f"Unexpected FlashInfer version: {flashinfer.__version__}")
     artifacts = {}
-    checksum_manifests = {}
     dsl_prefix = f"{ArtifactPath.DSL_FMHA}{TARGET_CPU_ARCH}/{TARGET_DSL_ARCH}/"
     selected_manifests = [
         f"{path}checksums.txt"
@@ -82,7 +79,6 @@ def main():
     for name in selected_manifests:
         expected = CheckSumHash.map_checksums[name]
         data = checked_artifact(name, expected)
-        checksum_manifests[name] = expected
         for line in data.decode().splitlines():
             digest, relative = line.split()
             relative_path = PurePosixPath(relative)
@@ -147,38 +143,7 @@ def main():
             raise RuntimeError(f"Export headers are missing: {target}")
         ensure_symlink(link, target)
 
-    site_packages = package_root.parent
-    header_roots = [Path("/usr/local/cuda/include")]
-    header_roots.extend(sorted((site_packages / "nvidia").glob("*/include")))
-    headers = {
-        name: [str(root / name) for root in header_roots if (root / name).is_file()]
-        for name in CUDA_HEADER_NAMES
-    }
-    report = {
-        "flashinfer_version": flashinfer.__version__,
-        "scope": {
-            "hardware": "B300",
-            "compute_capability": "10.3",
-            "cpu_architecture": TARGET_CPU_ARCH,
-            "dsl_architecture": TARGET_DSL_ARCH,
-            "retained_and_verified_generic_entries": generic_entries,
-            "download_scope": "only missing or invalid SM103a DSL objects",
-            "dsl_entries": dsl_entries,
-            "dsl_bytes": dsl_bytes,
-            "other_dsl_architectures_baked": False,
-            "other_hardware_validated": False,
-        },
-        "cubin_directory": str(env.FLASHINFER_CUBIN_DIR),
-        "generated_directory": str(env.FLASHINFER_GEN_SRC_DIR),
-        "checksum_manifests": checksum_manifests,
-        "artifacts": artifacts,
-        "symlinks": {str(link): str(target) for link, target in links.items()},
-        "shipped_cuda_headers": headers,
-        "globaltimer_compilation": "pending_gpu_probe_no_include_path_change",
-    }
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(report, indent=2) + "\n")
-    logging.info("Verified %d artifacts; report: %s", len(artifacts), REPORT_PATH)
+    logging.info("Verified %d artifacts", len(artifacts))
 
 
 if __name__ == "__main__":
