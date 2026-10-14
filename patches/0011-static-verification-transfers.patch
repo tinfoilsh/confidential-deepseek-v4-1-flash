@@ -1,0 +1,38 @@
+--- a/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/cc_readback.py
++++ b/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/cc_readback.py
+@@ -71,10 +71,14 @@
+         and spec.method == "dspark"
+         and spec.num_speculative_tokens == _SPECULATIVE_DEPTH
+         and spec.num_speculative_tokens_per_batch_size is None
+-        and spec.enable_adaptive_verification is True
++        and (
++            (spec.enable_adaptive_verification is True
++             and type(runner.adaptive_verification) is AdaptiveVerificationManager)
++            or (spec.enable_adaptive_verification is False
++                and runner.adaptive_verification is None)
++        )
+         and spec.draft_sample_method == "probabilistic"
+         and spec.rejection_sample_method == "block"
+-        and type(runner.adaptive_verification) is AdaptiveVerificationManager
+         and runner.num_speculative_steps == _SPECULATIVE_DEPTH
+         and type(runner.sampler) is Sampler
+         and type(runner.rejection_sampler) is RejectionSampler
+--- a/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/cc_input_staging.py
++++ b/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/cc_input_staging.py
+@@ -78,10 +78,14 @@
+         and spec.num_speculative_tokens == _SPECULATIVE_DEPTH
+         and runner.num_speculative_steps == _SPECULATIVE_DEPTH
+         and spec.num_speculative_tokens_per_batch_size is None
+-        and spec.enable_adaptive_verification is True
++        and (
++            (spec.enable_adaptive_verification is True
++             and type(runner.adaptive_verification) is AdaptiveVerificationManager)
++            or (spec.enable_adaptive_verification is False
++                and runner.adaptive_verification is None)
++        )
+         and spec.rejection_sample_method == "block"
+         and spec.draft_sample_method == "probabilistic"
+-        and type(runner.adaptive_verification) is AdaptiveVerificationManager
+         and not is_uva_available()
+         and not runner.model_config.logits_processors
+         and type(runner.sampler) is Sampler
