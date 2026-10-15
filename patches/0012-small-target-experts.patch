@@ -1,0 +1,76 @@
+--- a/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/core.py
++++ b/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/core.py
+@@ -3552,6 +3552,13 @@
+             tuning_config,
+             moe_inputs.to_list(),
+             **runner_kwargs,
++        )
++        from .cc_deepseek_tactics import select_target_tactic
++
++        tactic = select_target_tactic(
++            tactic, moe_runner, moe_inputs,
++            do_finalize=do_finalize, routing_input_mode=routing_input_mode,
++            tuning=tuner.is_tuning_mode,
+         )
+ 
+         def run_selected_tactic(tactic: Any) -> List[torch.Tensor]:
+--- /dev/null
++++ b/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cc_deepseek_tactics.py
+@@ -0,0 +1,57 @@
++"""Select a measured native tactic for DeepSeek's small target batches."""
++
++from functools import lru_cache
++import os
++
++import torch
++
++from flashinfer.fused_moe.shared.inputs import RoutingInputMode
++from flashinfer.jit.core import logger
++from flashinfer.tllm_enums import ActivationType, DtypeTrtllmGen, WeightLayout
++
++ENABLED = os.environ.get('VLLM_TINFOIL_DEEPSEEK_TARGET_TACTIC', '0') == '1'
++TARGET_TACTIC = (16, 783)
++TARGET_ROWS_PER_REQUEST = 6
++MAX_CONCURRENCY = 4
++TARGET_ROWS = frozenset(TARGET_ROWS_PER_REQUEST * c for c in range(1, MAX_CONCURRENCY + 1))
++HIDDEN_SIZE = 5120
++INTERMEDIATE_SIZE = 640
++EXPERTS = 384
++TOP_K = 6
++GPU_NAME = "NVIDIA B300 SXM6 AC"
++GPU_CAPABILITY = (10, 3)
++_activated_rows = set()
++
++
++@lru_cache(maxsize=None)
++def _supported_device(device):
++    return (device.type == "cuda"
++            and torch.cuda.get_device_name(device) == GPU_NAME
++            and torch.cuda.get_device_capability(device) == GPU_CAPABILITY)
++
++
++def select_target_tactic(tactic, runner, inputs, *, do_finalize, routing_input_mode, tuning):
++    rows = inputs.hidden_states.shape[0]
++    if not (
++        ENABLED and not tuning and do_finalize and rows in TARGET_ROWS
++        and runner.top_k == TOP_K
++        and runner.num_experts == runner.num_local_experts == EXPERTS
++        and runner.hidden_size == runner.hidden_size_output == HIDDEN_SIZE
++        and runner.intermediate_size == INTERMEDIATE_SIZE
++        and runner.dtype_act == DtypeTrtllmGen.MxE4m3
++        and runner.dtype_weights == DtypeTrtllmGen.MxE2m1
++        and runner.activation_type == ActivationType.Swiglu
++        and runner.weight_layout == WeightLayout.MajorK
++        and runner.use_shuffled_weight
++        and not runner.use_per_token_scaling
++        and runner.num_fused_shared_experts == 0
++        and routing_input_mode == RoutingInputMode.UnpackedPrecomputed
++        and inputs.gemm1_lora_delta is None
++        and inputs.output.dtype == torch.bfloat16
++        and _supported_device(inputs.hidden_states.device)
++    ):
++        return tactic
++    if rows not in _activated_rows:
++        _activated_rows.add(rows)
++        logger.info('DeepSeek CC target expert tactic active: rows=%d tactic=%s', rows, TARGET_TACTIC)
++    return TARGET_TACTIC

@@ -1,0 +1,72 @@
+--- a/usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py
++++ b/usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py
+@@ -183,6 +183,7 @@
+ 
+ _METADATA_KEY = "_metadata"
+ _NAMESPACED_RECORDS_KEY = "_records"
++_PROFILING_POLICY_NAMESPACE = "flashinfer.profiling_policy.v1"
+ _CACHE_GENERATION_KEY = "_generation"
+ 
+ # Metadata values a writer records when it cannot determine a field.
+@@ -1975,17 +1976,38 @@
+             # 2. User-loaded configs (from load_configs or autotune(cache=...)).
+             #    Skipped wholesale when nothing was loaded, so the common
+             #    serving path never builds a file_key string here.
+-            if use_file_config and self._file_configs:
++            if self._file_configs:
+                 for r_id, cache_key in runner_keys:
+                     file_key = cache_key.file_key
+                     if file_key in self._file_configs:
+                         runner_name, tactic = self._file_configs[file_key]
++                        if self.is_tuning_mode:
++                            policy_records = self._namespaced_records.get(
++                                _PROFILING_POLICY_NAMESPACE, {}
++                            )
++                            policy_record = (
++                                policy_records.get(file_key)
++                                if isinstance(policy_records, dict) else None
++                            )
++                            file_policy = default_policy
++                            if (
++                                isinstance(policy_record, dict)
++                                and policy_record.get("config")
++                                == [runner_name, _tactic_to_json(tactic)]
++                            ):
++                                recorded = policy_record.get("policy")
++                                file_policy = tuple(recorded) if isinstance(recorded, list) else None
++                            if file_policy != requested_policy:
++                                continue
+                         if runner_name != runners[r_id].__class__.__name__:
+                             continue
+                         if not self._tactic_still_valid(
+                             runners[r_id], inputs, tactic, custom_op, "config file"
+                         ):
+                             continue
++                        if self.is_tuning_mode:
++                            winners[cache_key] = (tactic, None)
++                            self._profiling_cache_policies[cache_key] = file_policy
+                         log_key = (custom_op, runner_name)
+                         if log_key not in self._logged_file_hits:
+                             self._logged_file_hits.add(log_key)
+@@ -3405,6 +3427,21 @@
+             AutoTuner.get().save_configs("/path/to/config.json")
+         """
+         with self._lock:
++            previous_policies = self._namespaced_records.get(
++                _PROFILING_POLICY_NAMESPACE, {}
++            )
++            policies = copy.deepcopy(previous_policies) if isinstance(previous_policies, dict) else {}
++            for cache_key, (tactic, _) in self.profiling_cache.items():
++                policy = self._profiling_cache_policies.get(cache_key)
++                if policy is None:
++                    policies.pop(cache_key.file_key, None)
++                else:
++                    policies[cache_key.file_key] = {
++                        "config": [cache_key.runner_class_name, _tactic_to_json(tactic)],
++                        "policy": list(policy),
++                    }
++            if policies != previous_policies:
++                self.publish_namespaced_records(_PROFILING_POLICY_NAMESPACE, policies)
+             seq_at_snapshot = self._dirty_seq
+             configs: dict[str, Any] = {}
+             namespaced_records = copy.deepcopy(self._namespaced_records)
