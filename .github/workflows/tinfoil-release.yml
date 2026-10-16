@@ -88,20 +88,6 @@ jobs:
             echo "config=$CONFIG"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Download qualified B200 kernels
-        if: inputs.variant == 'b200'
-        env:
-          GH_TOKEN: ${{ secrets.CC_LAB_READ_TOKEN }}
-          BUNDLE_REPO: tinfoilsh/deepseek-flash-cc-lab
-          BUNDLE_RELEASE: evidence-20261016-b200-normal-cc-selection
-          BUNDLE_FILE: b200-normal-cc-kernels-r1.tar.gz
-        run: |
-          if [[ -z "$GH_TOKEN" ]]; then
-            echo "::error::CC_LAB_READ_TOKEN needs Contents: read access to $BUNDLE_REPO"
-            exit 1
-          fi
-          gh release download "$BUNDLE_RELEASE" --repo "$BUNDLE_REPO" --pattern "$BUNDLE_FILE"
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 

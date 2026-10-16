@@ -41,7 +41,7 @@ RUN set -eu; \
     rm -rf /tmp/tinfoil-b200-patches
 
 ARG B200_KERNEL_BUNDLE_SHA256=15f851f293255633b9fdefaed1f53a9b095f711413e7856806d365268489000f
-COPY b200-normal-cc-kernels-r1.tar.gz /tmp/b200-kernels.tar.gz
+ADD https://github.com/tinfoilsh/confidential-deepseek-v4-1-flash/releases/download/b200-kernels-v1/b200-normal-cc-kernels-r1.tar.gz /tmp/b200-kernels.tar.gz
 RUN echo "${B200_KERNEL_BUNDLE_SHA256}  /tmp/b200-kernels.tar.gz" | sha256sum -c - && \
     mkdir -p /opt/tinfoil && \
     tar -xzf /tmp/b200-kernels.tar.gz -C /opt/tinfoil && rm /tmp/b200-kernels.tar.gz

@@ -38,15 +38,17 @@ time-to-first-token for those gains.
 The B200/TDX variant uses `Dockerfile.b200` and `tinfoil-config.b200.yml`. It
 reuses compact native prefill graphs, captured target preparation and sampling,
 and processor metadata mirrors. Its 198 measured kernel choices and compiled
-artifacts come from a checksum-pinned bundle; generated data is outside Git.
+artifacts come from a checksum-pinned [public build artifact](https://github.com/tinfoilsh/confidential-deepseek-v4-1-flash/releases/tag/b200-kernels-v1)
+in this repository; generated binaries remain outside Git. Runtime source and
+build inputs are maintained here. Benchmarks, experiment validation, and their
+results live in the private CC lab.
 The runtime requires the qualified TP4 configuration, normal CC mode, driver
 595.71.05, model revision, precision, software, and measurement policy. A
 compatibility mismatch fails before loading weights instead of retuning at boot.
 
-Download the qualified bundle with organization access, then build the variant:
+Build the variant directly; the Dockerfile downloads and verifies its bundle:
 
 ```sh
-gh release download evidence-20261016-b200-normal-cc-selection --repo tinfoilsh/deepseek-flash-cc-lab --pattern b200-normal-cc-kernels-r1.tar.gz
 docker build -f Dockerfile.b200 -t deepseek-b200 .
 ```
 
@@ -60,6 +62,6 @@ independently. Published tags are never replaced, and releases do not promote
 GitHub latest or publish shared container aliases. Freshness renewal selects
 the full release tag, including its variant.
 
-B200 releases require the `CC_LAB_READ_TOKEN` Actions secret with Contents: read
-access to `tinfoilsh/deepseek-flash-cc-lab` to download the qualified kernel bundle.
-Its checksum and compatibility checks remain enforced by the build and runtime.
+Both variants build from public inputs. The release workflow uses the standard
+repository token; no private-lab credential is required. Kernel checksums and
+compatibility checks remain enforced by the build and runtime.
