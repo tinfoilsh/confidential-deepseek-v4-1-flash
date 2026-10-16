@@ -34,3 +34,21 @@ is retained so startup can reuse these choices under CC.
 The configuration prioritizes interactive coding at concurrency 1–8. Static-five
 verification trades some throughput at concurrency 32 and short-prompt
 time-to-first-token for those gains.
+
+The B200/TDX variant uses `Dockerfile.b200` and `tinfoil-config.b200.yml`. It
+reuses compact native prefill graphs, captured target preparation and sampling,
+and processor metadata mirrors. Its 198 measured kernel choices and compiled
+artifacts come from a checksum-pinned bundle; generated data is outside Git.
+The runtime requires the qualified TP4 configuration, normal CC mode, driver
+595.71.05, model revision, precision, software, and measurement policy. A
+compatibility mismatch fails before loading weights instead of retuning at boot.
+
+Download the qualified bundle with organization access, then build the variant:
+
+```sh
+gh release download evidence-20261016-b200-normal-cc-selection --repo tinfoilsh/deepseek-flash-cc-lab --pattern b200-normal-cc-kernels-r1.tar.gz
+docker build -f Dockerfile.b200 -t deepseek-b200 .
+```
+
+Use its B200 configuration when preparing a release. The existing release
+workflow continues to select the B300 Dockerfile and configuration.
