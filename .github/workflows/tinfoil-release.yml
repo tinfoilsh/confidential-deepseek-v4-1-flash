@@ -1,24 +1,32 @@
 # Tinfoil Containers release workflow (phase 1 — initiate a release).
 #
 # Trigger this workflow from a branch via "Run workflow" and provide the
-# version. It builds the image, updates tinfoil-config.yml, creates the release
-# tag, and then dispatches phase 2 in `tinfoil-release-publish.yml` against the
-# new tag to attest the image and publish the GitHub release.
+# version and GPU variant. It builds the image, selects and pins tinfoil-config.yml,
+# creates the release tag, and then dispatches phase 2 in
+# `tinfoil-release-publish.yml` to attest the image and publish the GitHub release.
 
 name: Tinfoil Release
 
-run-name: Release ${{ inputs.version }}
+run-name: Release ${{ inputs.version }}+${{ inputs.variant }}
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g. v1.0.0)'
+        description: 'Base version without build metadata (e.g. v0.0.14 or v0.0.15-rc.1)'
         required: true
         type: string
+      variant:
+        description: 'GPU variant'
+        required: true
+        type: choice
+        default: b300
+        options:
+          - b300
+          - b200
 
 concurrency:
-  group: tinfoil-container-release-${{ inputs.version }}
+  group: tinfoil-container-release-${{ inputs.version }}+${{ inputs.variant }}
 
 jobs:
   build:
@@ -28,6 +36,8 @@ jobs:
       packages: write   # push the container image
     outputs:
       digest: ${{ steps.build.outputs.digest }}
+      release-tag: ${{ steps.release.outputs.release-tag }}
+      config: ${{ steps.release.outputs.config }}
 
     steps:
       - name: Checkout repository
@@ -35,14 +45,62 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check if version tag already exists
+      - name: Select and validate release
+        id: release
         env:
           VERSION: ${{ inputs.version }}
+          VARIANT: ${{ inputs.variant }}
+          SEMVER_VERSION: '7.7.3'
+          MAX_IMAGE_TAG_LENGTH: '128'
         run: |
-          if git ls-remote --tags origin "refs/tags/$VERSION" | grep -q .; then
-            echo "::error::Tag $VERSION already exists"
+          if [[ "$GITHUB_REF_TYPE" != branch ]]; then
+            echo "::error::Start releases from a source branch, not a generated release tag"
             exit 1
           fi
+          NORMALIZED=$(npm exec --yes --package="semver@$SEMVER_VERSION" -- semver "$VERSION")
+          if [[ "$VERSION" != "v$NORMALIZED" || "$VERSION" == *+* ]]; then
+            echo "::error::Use a canonical v-prefixed version without build metadata"
+            exit 1
+          fi
+          case "$VARIANT" in
+            b300) DOCKERFILE=Dockerfile; CONFIG=tinfoil-config.yml ;;
+            b200) DOCKERFILE=Dockerfile.b200; CONFIG=tinfoil-config.b200.yml ;;
+            *) echo "::error::Unsupported GPU variant"; exit 1 ;;
+          esac
+          RELEASE_TAG="$VERSION+$VARIANT"
+          IMAGE_TAG="${VERSION#v}-$VARIANT"
+          if (( ${#IMAGE_TAG} > MAX_IMAGE_TAG_LENGTH )); then
+            echo "::error::Container image tag is too long"
+            exit 1
+          fi
+          git check-ref-format "refs/tags/$RELEASE_TAG"
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null; then
+            echo "::error::Tag $RELEASE_TAG already exists"
+            exit 1
+          else
+            STATUS=$?
+            if [[ "$STATUS" != 2 ]]; then exit "$STATUS"; fi
+          fi
+          {
+            echo "release-tag=$RELEASE_TAG"
+            echo "image-tag=$IMAGE_TAG"
+            echo "dockerfile=$DOCKERFILE"
+            echo "config=$CONFIG"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download qualified B200 kernels
+        if: inputs.variant == 'b200'
+        env:
+          GH_TOKEN: ${{ secrets.CC_LAB_READ_TOKEN }}
+          BUNDLE_REPO: tinfoilsh/deepseek-flash-cc-lab
+          BUNDLE_RELEASE: evidence-20261016-b200-normal-cc-selection
+          BUNDLE_FILE: b200-normal-cc-kernels-r1.tar.gz
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::CC_LAB_READ_TOKEN needs Contents: read access to $BUNDLE_REPO"
+            exit 1
+          fi
+          gh release download "$BUNDLE_RELEASE" --repo "$BUNDLE_REPO" --pattern "$BUNDLE_FILE"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
@@ -59,10 +117,11 @@ jobs:
         uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
         with:
           images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
           tags: |
-            type=semver,pattern={{version}},value=${{ inputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }}
-            type=sha,format=short
+            type=raw,value=${{ steps.release.outputs.image-tag }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.release.outputs.release-tag }}
 
       - name: Build and push Docker image
         id: build
@@ -71,35 +130,61 @@ jobs:
           SOURCE_DATE_EPOCH: 0
         with:
           context: .
+          file: ${{ steps.release.outputs.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ inputs.version }}
+            VERSION=${{ steps.release.outputs.release-tag }}
 
   prepare-release:
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # update-container-action pushes the release tag
-      pull-requests: write  # required by update-container-action
+      contents: write       # push the release tag
       actions: write        # dispatch tinfoil-release-publish.yml on the new tag
 
     steps:
-      - name: Update tinfoil-config.yml and create the release tag
-        uses: tinfoilsh/update-container-action@5e0a3789316941664cee055706799114e0180565 # v0.6.0
+      - name: Checkout source commit
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          version: ${{ inputs.version }}
-          source-sha: ${{ github.sha }}
-          update-config: true
-          image-refs: |
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Checkout pinned configuration updater
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          repository: tinfoilsh/update-container-action
+          ref: 5e0a3789316941664cee055706799114e0180565 # v0.6.0
+          path: .release-tools
+          persist-credentials: false
+
+      - name: Select configuration and create the release tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.release-tag }}
+          CONFIG: ${{ needs.build.outputs.config }}
+          IMAGE_REFS: |
             ghcr.io/${{ github.repository }}@${{ needs.build.outputs.digest }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "$CONFIG" != tinfoil-config.yml ]]; then
+            cp "$CONFIG" tinfoil-config.yml
+          fi
+          python3 .release-tools/update_config.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          SOURCE_DATE=$(git show -s --format=%cI "$GITHUB_SHA")
+          export GIT_AUTHOR_DATE="$SOURCE_DATE" GIT_COMMITTER_DATE="$SOURCE_DATE"
+          git add tinfoil-config.yml
+          git commit -m "chore: prepare $VERSION release"
+          git tag "$VERSION"
+          gh auth setup-git
+          git push origin "refs/tags/$VERSION"
 
       - name: Dispatch the publish workflow on the new tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.build.outputs.release-tag }}
         run: |
           gh workflow run tinfoil-release-publish.yml --ref "$VERSION"

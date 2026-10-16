@@ -9,7 +9,7 @@ models:
   schema: 2
 containers:
 - name: deepseek-v4-1-flash
-  image: ghcr.io/tinfoilsh/confidential-deepseek-v4-1-flash@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  image: "ghcr.io/tinfoilsh/confidential-deepseek-v4-1-flash@sha256:0000000000000000000000000000000000000000000000000000000000000000"
   runtime: nvidia
   read_only: true
   gpus: all

@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: tinfoil-container-release-${{ github.ref_name }}
+  group: tinfoil-container-publish-${{ github.ref_name }}
 
 jobs:
   measure-and-release:
@@ -28,3 +28,14 @@ jobs:
         with:
           config-file: ${{ github.workspace }}/tinfoil-config.yml
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          mark-as-latest: 'false'
+
+      - name: Mark release candidates as prereleases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ "${RELEASE_TAG%%+*}" == *-* ]]; then
+            gh release edit "$RELEASE_TAG" --prerelease --latest=false
+          fi

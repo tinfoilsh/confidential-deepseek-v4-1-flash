@@ -50,5 +50,16 @@ gh release download evidence-20261016-b200-normal-cc-selection --repo tinfoilsh/
 docker build -f Dockerfile.b200 -t deepseek-b200 .
 ```
 
-Use its B200 configuration when preparing a release. The existing release
-workflow continues to select the B300 Dockerfile and configuration.
+Run the **Tinfoil Release** workflow from the source branch with a base `version` and a `variant`
+(`b200` or `b300`). For example, `v0.0.14` with `b200` publishes GitHub release
+`v0.0.14+b200` and container tag `0.0.14-b200`; `v0.0.15-rc.1` produces
+`v0.0.15-rc.1+b200` as a prerelease. The workflow selects the variant's Dockerfile
+and pins its image digest into the tagged `tinfoil-config.yml` before measurement
+and attestation. Both variants use the same source branch and can be released
+independently. Published tags are never replaced, and releases do not promote
+GitHub latest or publish shared container aliases. Freshness renewal selects
+the full release tag, including its variant.
+
+B200 releases require the `CC_LAB_READ_TOKEN` Actions secret with Contents: read
+access to `tinfoilsh/deepseek-flash-cc-lab` to download the qualified kernel bundle.
+Its checksum and compatibility checks remain enforced by the build and runtime.
