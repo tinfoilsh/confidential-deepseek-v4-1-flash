@@ -1,0 +1,45 @@
+--- a/usr/local/lib/python3.12/dist-packages/vllm/compilation/breakable_cudagraph.py
++++ b/usr/local/lib/python3.12/dist-packages/vllm/compilation/breakable_cudagraph.py
+@@ -402,7 +402,7 @@
+         entry.capture = capture
+         entry.output = weak_ref_tensors(output)
+ 
+-        logger.debug(
++        logger.info(
+             "Captured breakable cudagraph for %s: %r",
+             entry.batch_descriptor,
+             capture,
+--- /dev/null
++++ b/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/cc_prefill_graph_policy.py
+@@ -0,0 +1,12 @@
++"""Limit prefill capture inventory while retaining native decode descriptors."""
++
++import os
++
++from vllm.config.compilation import CUDAGraphMode
++
++COMPACT_SIZES = frozenset((512, 1024, 2048, 4096, 8192))
++COMPACT = os.environ.get("TINFOIL_PREFILL_CAPTURE_SET") == "compact"
++
++
++def include(mode, num_tokens):
++    return not COMPACT or mode != CUDAGraphMode.PIECEWISE or num_tokens in COMPACT_SIZES
+--- a/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/cudagraph_utils.py
++++ b/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/cudagraph_utils.py
+@@ -22,6 +22,7 @@
+ from vllm.compilation.wrapper import TorchCompileWithNoGuardsWrapper
+ from vllm.config import VllmConfig, set_current_vllm_config
+ from vllm.config.compilation import CUDAGraphMode
++from vllm.v1.worker.gpu import cc_prefill_graph_policy
+ from vllm.distributed.device_communicators.pynccl_allocator import set_graph_pool_id
+ from vllm.distributed.parallel_state import (
+     get_pp_group,
+@@ -341,7 +342,7 @@
+                         descs_by_mode[decode_mode].append(ubatch_desc)
+ 
+             # recoverSSM cannot capture a dummy query wider than its workspace.
+-            if mixed_mode and (
++            if mixed_mode and cc_prefill_graph_policy.include(mixed_mode, num_tokens) and (
+                 not self.vllm_config.cache_config.use_kda_recoverssm
+                 or num_tokens <= max_decode_tokens
+             ):

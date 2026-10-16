@@ -34,3 +34,36 @@ is retained so startup can reuse these choices under CC.
 The configuration prioritizes interactive coding at concurrency 1–8. Static-five
 verification trades some throughput at concurrency 32 and short-prompt
 time-to-first-token for those gains.
+
+The B200/TDX variant uses `Dockerfile.b200` and `tinfoil-config.b200.yml`. It
+reuses compact native prefill graphs, captured target preparation and sampling,
+and processor metadata mirrors. Its 198 measured kernel choices and compiled
+artifacts come from a checksum-pinned [public build artifact](https://github.com/tinfoilsh/confidential-deepseek-v4-1-flash/releases/tag/b200-kernels-v2)
+in this repository; generated binaries remain outside Git. Runtime source and
+build inputs are maintained here. Benchmarks, experiment validation, and their
+results live in the private CC lab.
+The [B200 patch review guide](b200/patches/README.md) describes the ordered
+inference changes and their dependencies.
+The runtime requires the qualified TP4 configuration, normal CC mode, driver
+595.71.05, model revision, precision, software, and measurement policy. A
+compatibility mismatch fails before loading weights instead of retuning at boot.
+
+Build the variant directly; the Dockerfile downloads and verifies its bundle:
+
+```sh
+docker build -f Dockerfile.b200 -t deepseek-b200 .
+```
+
+Run the **Tinfoil Release** workflow from the source branch with a base `version` and a `variant`
+(`b200` or `b300`). For example, `v0.0.14` with `b200` publishes GitHub release
+`v0.0.14+b200` and container tag `0.0.14-b200`; `v0.0.15-rc.1` produces
+`v0.0.15-rc.1+b200` as a prerelease. The workflow selects the variant's Dockerfile
+and pins its image digest into the tagged `tinfoil-config.yml` before measurement
+and attestation. Both variants use the same source branch and can be released
+independently. Published tags are never replaced, and releases do not promote
+GitHub latest or publish shared container aliases. Freshness renewal selects
+the full release tag, including its variant.
+
+Both variants build from public inputs. The release workflow uses the standard
+repository token; no private-lab credential is required. Kernel checksums and
+compatibility checks remain enforced by the build and runtime.

@@ -1,0 +1,5 @@
+{
+  "parent_image": "sha256:9a54a481837d00e4567569bfee68ccf44a82e871b9e7b2109bb0ae00b61236c9",
+  "native_artifacts": "B200 SM100a plus verified shared artifacts",
+  "measurement_revision": "captured_kernel_v1"
+}

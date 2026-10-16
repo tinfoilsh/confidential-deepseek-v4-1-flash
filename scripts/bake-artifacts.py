@@ -1,6 +1,7 @@
 """Bake FlashInfer artifacts from the installed version's pinned manifests."""
 
 from concurrent.futures import ThreadPoolExecutor
+import argparse
 import hashlib
 import importlib.util
 import json
@@ -12,10 +13,9 @@ CONTEXT = Path(__file__).resolve().parent
 DOWNLOAD_WORKERS = 4
 FLASHINFER_VERSION = "0.7.0.post1"
 TARGET_CPU_ARCH = "x86_64"
-TARGET_DSL_ARCH = "sm_103a"
+DEFAULT_DSL_ARCH = "sm_103a"
 EXPECTED_GENERIC_ENTRIES = 42738
-EXPECTED_DSL_ENTRIES = 368
-EXPECTED_DSL_BYTES = 149782912
+DSL_ARTIFACTS = {"sm_103a": (368, 149782912), "sm_100a": (368, 234715280)}
 GEMM_MODULES = (
     "trtllm_gemm",
     "trtllm_gemm_sm107",
@@ -44,6 +44,10 @@ def checked_artifact(name, expected, allow_download=False):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--architecture", choices=DSL_ARTIFACTS, default=DEFAULT_DSL_ARCH)
+    architecture = parser.parse_args().architecture
+    expected_dsl_entries, expected_dsl_bytes = DSL_ARTIFACTS[architecture]
     logging.basicConfig(level=logging.INFO)
     if os.environ.get("FLASHINFER_CUBIN_CHECKSUM_DISABLED"):
         raise RuntimeError("Artifact checksum validation must remain enabled")
@@ -65,7 +69,7 @@ def main():
     if flashinfer.__version__ != FLASHINFER_VERSION:
         raise RuntimeError(f"Unexpected FlashInfer version: {flashinfer.__version__}")
     artifacts = {}
-    dsl_prefix = f"{ArtifactPath.DSL_FMHA}{TARGET_CPU_ARCH}/{TARGET_DSL_ARCH}/"
+    dsl_prefix = f"{ArtifactPath.DSL_FMHA}{TARGET_CPU_ARCH}/{architecture}/"
     selected_manifests = [
         f"{path}checksums.txt"
         for path in (
@@ -93,7 +97,7 @@ def main():
     generic_entries = len(artifacts) - dsl_entries
     if (generic_entries, dsl_entries) != (
         EXPECTED_GENERIC_ENTRIES,
-        EXPECTED_DSL_ENTRIES,
+        expected_dsl_entries,
     ):
         raise RuntimeError("The pinned artifact counts differ from the audited scope")
 
@@ -105,7 +109,7 @@ def main():
 
     with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as pool:
         dsl_bytes = sum(pool.map(download, sorted(artifacts.items())))
-    if dsl_bytes != EXPECTED_DSL_BYTES:
+    if dsl_bytes != expected_dsl_bytes:
         raise RuntimeError("The pinned DSL payload size differs from the audited scope")
 
     gemm_relative = Path("flashinfer/trtllm/gemm/trtllmGen_gemm_export")
