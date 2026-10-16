@@ -3,18 +3,15 @@
 import csv
 import importlib.metadata
 import json
-import logging
 import os
 from pathlib import Path
 import platform
 import subprocess
-import sys
 
-from b200_bundle import digest, identity_key, install
+from b200_bundle import digest
 
 SITE = Path("/usr/local/lib/python3.12/dist-packages")
 BUILD = Path("/opt/tinfoil/b200-runtime-build.json")
-BUNDLE = Path("/opt/tinfoil/b200-bundle")
 CACHE_ROOT = Path("/root")
 MODEL_REVISION = "dba1be0a40aa45a94ad051997016db3960a90277"
 MODEL_PACK = "mpk-159977c3efb94d1eba09025f71af1d1d55d6a58c58e4165b4587ec83166fa385"
@@ -37,7 +34,6 @@ ENVIRONMENT_NAMES = (
     "OMP_NUM_THREADS", "PYTORCH_CUDA_ALLOC_CONF",
 )
 COMMAND_TIMEOUT_SECONDS = 15
-LOGGER = logging.getLogger("b200_runtime")
 
 
 def option(command, name, default=None):
@@ -94,29 +90,3 @@ def describe(command, *, gpu_mode="cc"):
                                "per_shape_policy": "flashinfer.profiling_policy.v1",
                                "autotuner_source_sha256": digest(SITE / SOURCE_NAMES[0])},
     }
-
-
-def main():
-    logging.basicConfig(level=logging.INFO)
-    if sys.argv[1:3] != ["vllm", "serve"]:
-        raise ValueError("Use the declared vLLM serve entrypoint")
-    identity = describe(sys.argv[3:])
-    key = identity_key(identity)
-    tuning_root = CACHE_ROOT / ".cache/vllm/b200-qualified" / key
-    mode = os.environ.get("TINFOIL_TUNING_MODE", "require")
-    if mode == "tune":
-        tuning_root.mkdir(parents=True, exist_ok=True)
-        (tuning_root / "runtime-identity.json").write_text(json.dumps(identity, indent=2, sort_keys=True) + "\n")
-        LOGGER.info("Explicit tuning enabled for configuration %s", key)
-    elif mode == "require":
-        install(BUNDLE, CACHE_ROOT, identity)
-        LOGGER.info("Measured shape choices required for configuration %s; startup profiling is disabled", key)
-    else:
-        raise ValueError("TINFOIL_TUNING_MODE must be tune or require")
-    os.environ["FLASHINFER_AUTOTUNE_REQUIRE_CACHE"] = "1" if mode == "require" else "0"
-    os.environ["VLLM_FLASHINFER_AUTOTUNE_CACHE_DIR"] = str(tuning_root)
-    os.execv("/opt/tinfoil/entrypoint.sh", ["/opt/tinfoil/entrypoint.sh", *sys.argv[1:]])
-
-
-if __name__ == "__main__":
-    main()

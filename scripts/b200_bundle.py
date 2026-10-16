@@ -1,6 +1,5 @@
-"""Package and verify configuration-specific native tuning and kernel caches."""
+"""Verify and install configuration-specific native tuning and kernel caches."""
 
-import argparse
 import hashlib
 import json
 import logging
@@ -74,32 +73,6 @@ def validate_tuning(path, measurement_policy):
     return len(entries)
 
 
-def create(source, output, identity, paths, tuning_path):
-    key = identity_key(identity)
-    if output.exists():
-        raise ValueError("Use a fresh bundle output directory")
-    names = sorted(set(paths))
-    if tuning_path not in names:
-        raise ValueError("The bundle must include its native tuning cache")
-    count = validate_tuning(checked_path(source, tuning_path), identity["measurement_policy"])
-    files = {}
-    for name in names:
-        path = checked_path(source, name)
-        if not path.is_file():
-            raise ValueError("A bundle artifact is not a regular file: " + name)
-        files[name] = {"sha256": digest(path), "bytes": path.stat().st_size}
-    output.mkdir(parents=True)
-    for name in names:
-        target = checked_path(output / "files", name)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(checked_path(source, name), target)
-    manifest = {"schema": SCHEMA, "identity": identity, "identity_key": key,
-                "tuning_path": tuning_path, "tuning_entries": count, "files": files}
-    (output / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    verify(output, identity)
-    return manifest
-
-
 def verify(bundle, identity):
     manifest = json.loads((bundle / "manifest.json").read_text())
     if (manifest.get("schema") != SCHEMA or manifest.get("identity") != identity
@@ -143,26 +116,3 @@ def install(bundle, destination, identity):
                 manifest["identity_key"], manifest["tuning_entries"], len(manifest["files"]),
                 sum(row["bytes"] for row in manifest["files"].values()))
     return manifest
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("create", "verify", "install"))
-    parser.add_argument("--identity", type=Path, required=True)
-    parser.add_argument("--bundle", type=Path, required=True)
-    parser.add_argument("--cache-root", type=Path)
-    parser.add_argument("--inventory", type=Path)
-    parser.add_argument("--tuning-path")
-    args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO)
-    identity = json.loads(args.identity.read_text())
-    if args.operation == "create":
-        create(args.cache_root, args.bundle, identity, json.loads(args.inventory.read_text()), args.tuning_path)
-    elif args.operation == "install":
-        install(args.bundle, args.cache_root, identity)
-    else:
-        verify(args.bundle, identity)
-
-
-if __name__ == "__main__":
-    main()
