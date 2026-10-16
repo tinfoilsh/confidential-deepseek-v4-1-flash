@@ -1,0 +1,156 @@
+--- a/usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py
++++ b/usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py
+@@ -46,6 +46,7 @@
+ # such as when new kernels or configs are added. In such cases, the tuning configs
+ # should also be updated. Currently, this process is manual, but it should be automated in the future.
+ _nvfp4_cutlass_version = "0.1"
++_NANOSECONDS_PER_MILLISECOND = 1_000_000
+ 
+ 
+ def _tactic_to_json(tactic: Any) -> Any:
+@@ -2769,9 +2770,21 @@
+                 device=device,
+             )
+             num_samples = repeat * profile_replays
+-            starts = [torch.cuda.Event(enable_timing=True) for _ in range(num_samples)]
+-            ends = [torch.cuda.Event(enable_timing=True) for _ in range(num_samples)]
++            if self._use_global_timer:
++                start_timestamps = torch.empty(
++                    num_samples, dtype=torch.int64, device=device
++                )
++                end_timestamps = torch.empty_like(start_timestamps)
++                starts = start_timestamps.split(1)
++                ends = end_timestamps.split(1)
++            else:
++                starts = [torch.cuda.Event(enable_timing=True) for _ in range(num_samples)]
++                ends = [torch.cuda.Event(enable_timing=True) for _ in range(num_samples)]
+             graph = torch.cuda.CUDAGraph() if tuning_config.use_cuda_graph else None
++            capture_timer = graph is not None and self._use_global_timer
++            if capture_timer:
++                graph_start = torch.empty_like(starts[0])
++                graph_end = torch.empty_like(ends[0])
+ 
+             def _run_once(profile_inputs):
+                 runner(profile_inputs, tactic=tactic, **kwargs)
+@@ -2779,7 +2792,11 @@
+             with torch.cuda.stream(stream):
+                 if graph is not None:
+                     with torch.cuda.graph(graph):
++                        if capture_timer:
++                            self._record_global_timer(graph_start)
+                         _run_once(input_tensor_batches[-1])
++                        if capture_timer:
++                            self._record_global_timer(graph_end)
+                     # Exercise the captured graph before collecting samples;
+                     # every measured replay below is cold independently.
+                     graph.replay()
+@@ -2795,22 +2812,47 @@
+ 
+                 for sample_idx in range(num_samples):
+                     flush_buffer.zero_()
+-                    starts[sample_idx].record(stream)
++                    if capture_timer:
++                        graph.replay()
++                        # Preserve each replay's stamps before the next replay
++                        # overwrites the graph's fixed-address timestamp buffers.
++                        starts[sample_idx].copy_(graph_start)
++                        ends[sample_idx].copy_(graph_end)
++                        continue
++                    if self._use_global_timer:
++                        self._record_global_timer(starts[sample_idx])
++                    else:
++                        starts[sample_idx].record(stream)
+                     if graph is not None:
+                         graph.replay()
+                     else:
+                         _run_once(
+                             input_tensor_batches[sample_idx % len(input_tensor_batches)]
+                         )
+-                    ends[sample_idx].record(stream)
++                    if self._use_global_timer:
++                        self._record_global_timer(ends[sample_idx])
++                    else:
++                        ends[sample_idx].record(stream)
+ 
+                 # One synchronization after all samples keeps host overhead
+                 # out of the per-invocation measurements.
+                 stream.synchronize()
+ 
+-            samples = [
+-                start.elapsed_time(end) for start, end in zip(starts, ends, strict=True)
+-            ]
++            if self._use_global_timer:
++                # Read timestamps only after every sample has completed.
++                samples = [
++                    (end - start) / _NANOSECONDS_PER_MILLISECOND
++                    for start, end in zip(
++                        start_timestamps.cpu().tolist(),
++                        end_timestamps.cpu().tolist(),
++                        strict=True,
++                    )
++                ]
++            else:
++                samples = [
++                    start.elapsed_time(end)
++                    for start, end in zip(starts, ends, strict=True)
++                ]
+             return statistics.median(samples)
+ 
+         def pure_profile(stream: torch.cuda.Stream, repeat: int) -> float:
+@@ -3308,8 +3350,7 @@
+             extras=extras,
+         )
+ 
+-    @staticmethod
+-    def _profiling_policy(tuning_config: TuningConfig) -> tuple:
++    def _profiling_policy(self, tuning_config: TuningConfig) -> tuple:
+         """Return measurement provenance that can change tactic ranking."""
+         return (
+             "cuda_graph_profile_replays",
+@@ -3320,6 +3361,17 @@
+             ),
+             "l2_cache_policy",
+             "cold" if tuning_config.use_cold_l2_cache else "hot",
++            "timer",
++            "globaltimer" if self._use_global_timer else "cuda_event",
++            "timer_boundary",
++            "captured_kernel_v1"
++            if (self._use_global_timer and tuning_config.use_cuda_graph
++                and tuning_config.use_cold_l2_cache)
++            else "submission",
++            "warmup",
++            self.warmup,
++            "repeat",
++            self._get_profiling_repeat(tuning_config),
+         )
+ 
+     @staticmethod
+--- a/usr/local/lib/python3.12/dist-packages/flashinfer/utils.py
++++ b/usr/local/lib/python3.12/dist-packages/flashinfer/utils.py
+@@ -1640,14 +1640,24 @@
+ def get_globaltimer_kernel():
+     """Lazily JIT-build the %globaltimer kernel."""
+ 
++    if library := os.environ.get("FLASHINFER_GLOBALTIMER_LIBRARY"):
++        import importlib.util
++
++        spec = importlib.util.spec_from_file_location("flashinfer_globaltimer", library)
++        if spec is None or spec.loader is None:
++            raise RuntimeError("Cannot load the configured globaltimer artifact")
++        module = importlib.util.module_from_spec(spec)
++        spec.loader.exec_module(module)
++        return module.get_globaltimer_timestamp
++
+     _GLOBALTIMER_KERNEL_CU = r"""
+     #include <torch/extension.h>
+-    #include <ATen/cuda/CUDAContext.h>
++    #include <c10/cuda/CUDAStream.h>
+     __global__ void _get_globaltimer_timestamp(uint64_t* timestamp) {
+         asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(*timestamp));
+     }
+     void get_globaltimer_timestamp(torch::Tensor timestamp) {
+-        _get_globaltimer_timestamp<<<1, 1, 0, at::cuda::getCurrentCUDAStream()>>>(
++        _get_globaltimer_timestamp<<<1, 1, 0, c10::cuda::getCurrentCUDAStream()>>>(
+         reinterpret_cast<uint64_t*>(timestamp.data_ptr<int64_t>()));
+     }
+     """

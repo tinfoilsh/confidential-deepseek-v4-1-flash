@@ -1,0 +1,96 @@
+--- a/usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py
++++ b/usr/local/lib/python3.12/dist-packages/flashinfer/autotuner/autotuner.py
+@@ -2358,6 +2358,11 @@
+                         inputs=inputs,
+                     )
+                     if not is_cache_hit:
++                        if os.environ.get("FLASHINFER_AUTOTUNE_REQUIRE_CACHE") == "1":
++                            raise RuntimeError(
++                                f"The measured kernel bundle does not cover {custom_op} "
++                                f"profile {p.get_opt_shapes()}; qualify this configuration explicitly"
++                            )
+                         # Active capture is safe for skipped operations and warm cache hits, but
+                         # input synthesis or profiling would mutate the caller's outer graph.
+                         if torch.cuda.is_current_stream_capturing():
+--- /dev/null
++++ b/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/cc_replay_cache.py
+@@ -0,0 +1,19 @@
++"""Require the exact recorded choices before native warmup can replay them."""
++
++import hashlib
++import json
++
++
++def require_replay_cache(path, expected_key, expected_sha256):
++    if not expected_key or not expected_sha256 or path.parent.name != expected_key:
++        raise RuntimeError("The native tuning-cache key differs from the declared experiment")
++    if not path.is_file():
++        raise RuntimeError("The recorded tuning cache is missing from the native lookup path")
++    payload = json.loads(path.read_text())
++    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
++    if hashlib.sha256(canonical).hexdigest() != expected_sha256:
++        raise RuntimeError("The native tuning cache differs from the recorded shape choices")
++    entries = sum(not key.startswith("_") for key in payload)
++    if not entries:
++        raise RuntimeError("The native replay cache has no recorded shape choices")
++    return entries
+--- a/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/kernel_warmup.py
++++ b/usr/local/lib/python3.12/dist-packages/vllm/model_executor/warmup/kernel_warmup.py
+@@ -5,6 +5,7 @@
+ happen during model execution.
+ """
+ 
++import os
+ import sys
+ import time
+ from typing import TYPE_CHECKING
+@@ -433,6 +434,16 @@
+         autotune_kwargs["skip_ops"] = skip_ops
+ 
+     cache_path = resolve_flashinfer_autotune_file(runner)
++    replay_only = os.environ.get("TINFOIL_FLASHINFER_REPLAY_ONLY") == "1"
++    if replay_only:
++        from vllm.model_executor.warmup.cc_replay_cache import require_replay_cache
++
++        entries = require_replay_cache(
++            cache_path, os.environ.get("TINFOIL_FLASHINFER_CACHE_KEY"),
++            os.environ.get("TINFOIL_FLASHINFER_CACHE_SHA256"),
++        )
++        logger.info_once("Verified %d recorded FlashInfer choices for native configuration %s",
++                         entries, cache_path.parent.name)
+     if is_leader:
+         logger.info_once("Using FlashInfer autotune cache file: %s", cache_path)
+ 
+@@ -450,7 +461,9 @@
+     if cached_results is not None:
+         write_flashinfer_autotune_cache(cache_path, cached_results)
+         world.barrier()
+-        tuner.load_configs(str(cache_path))
++        loaded = tuner.load_configs(str(cache_path))
++        if replay_only and not loaded:
++            raise RuntimeError("FlashInfer rejected the recorded native replay cache")
+ 
+     group = world.cpu_group if world.world_size > 1 else None
+     set_autotune_process_group(group)
+--- a/usr/local/lib/python3.12/dist-packages/vllm/utils/flashinfer.py
++++ b/usr/local/lib/python3.12/dist-packages/vllm/utils/flashinfer.py
+@@ -304,11 +304,18 @@
+ 
+ 
+ # Special case for autotune since it returns a context manager
+-autotune = _lazy_import_wrapper(
++_native_autotune = _lazy_import_wrapper(
+     "flashinfer.autotuner",
+     "autotune",
+     fallback_fn=lambda *args, **kwargs: contextlib.nullcontext(),
+ )
++
++
++def autotune(tune_mode=True, *args, **kwargs):
++    if os.environ.get("TINFOIL_FLASHINFER_REPLAY_ONLY") == "1":
++        logger.info_once("Replaying pinned FlashInfer choices; profiling is disabled.")
++        tune_mode = False
++    return _native_autotune(tune_mode, *args, **kwargs)
+ 
+ 
+ @functools.cache

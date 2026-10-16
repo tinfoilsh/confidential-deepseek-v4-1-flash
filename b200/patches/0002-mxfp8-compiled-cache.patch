@@ -1,0 +1,76 @@
+--- a/usr/local/lib/python3.12/dist-packages/flashinfer/gemm/gemm_base.py
++++ b/usr/local/lib/python3.12/dist-packages/flashinfer/gemm/gemm_base.py
+@@ -5704,6 +5704,35 @@
+         raise ValueError("CuTe DSL is not available.")
+ 
+ 
++def _mxfp8_kernel_disk_name(cache_key, batch_size, max_active_clusters):
++    (
++        sf_vec_size, tile, cluster, swap_ab, use_prefetch,
++        enable_pdl, out_dtype, split_k_slices,
++    ) = cache_key
++    dtype = str(out_dtype).removeprefix("torch.")
++    return (
++        f"sf{sf_vec_size}_t{tile[0]}x{tile[1]}_c{cluster[0]}x{cluster[1]}"
++        f"_swap{int(swap_ab)}_pf{int(use_prefetch)}_pdl{int(enable_pdl)}"
++        f"_{dtype}_split{split_k_slices}_b{batch_size}_mac{max_active_clusters}"
++    )
++
++
++def _mxfp8_kernel_cache_files():
++    from . import gemm_mm_fp4_cute_dsl
++    from .kernels import (
++        dense_blockscaled_gemm_sm100,
++        dense_blockscaled_gemm_sm100_common,
++        dense_blockscaled_gemm_sm100_splitk,
++    )
++
++    return (
++        __file__, gemm_mm_fp4_cute_dsl.__file__,
++        dense_blockscaled_gemm_sm100.__file__,
++        dense_blockscaled_gemm_sm100_common.__file__,
++        dense_blockscaled_gemm_sm100_splitk.__file__,
++    )
++
++
+ def _cute_dsl_gemm_mxfp8_runner(
+     sm_major: int,
+     sm_minor: int,
+@@ -5906,6 +5935,9 @@
+                 sf_k=sf_k,
+                 batch_size=batch_size,
+                 cluster_shape_k=split_k_slices,
++                cache_module_name="mxfp8_gemm",
++                cache_kernel_name=_mxfp8_kernel_disk_name,
++                cache_key_files=_mxfp8_kernel_cache_files(),
+             )
+ 
+             alpha_for_launch = _prepare_alpha_for_launch(None, a.device)
+--- a/usr/local/lib/python3.12/dist-packages/flashinfer/gemm/gemm_mm_fp4_cute_dsl.py
++++ b/usr/local/lib/python3.12/dist-packages/flashinfer/gemm/gemm_mm_fp4_cute_dsl.py
+@@ -58,6 +58,8 @@
+     cluster_shape_k=1,
+     cache_module_name=None,
+     device_index=None,
++    cache_kernel_name=None,
++    cache_key_files=None,
+ ):
+     """Compile a block-scaled GEMM kernel via CuTe DSL and cache it.
+ 
+@@ -109,9 +111,14 @@
+ 
+         compiled_gemm = build_and_load_cute_dsl_kernel(
+             cache_module_name,
+-            _blockscaled_kernel_disk_name(cache_key, batch_size, max_active_clusters),
++            (cache_kernel_name or _blockscaled_kernel_disk_name)(
++                cache_key, batch_size, max_active_clusters
++            ),
+             compile_kernel,
+-            extra_key_files=_blockscaled_gemm_cache_key_files(),
++            extra_key_files=(
++                _blockscaled_gemm_cache_key_files()
++                if cache_key_files is None else cache_key_files
++            ),
+         )
+ 
+     result = (compiled_gemm, max_active_clusters)

@@ -1,0 +1,162 @@
+--- a/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/cudagraph_utils.py
++++ b/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/cudagraph_utils.py
+@@ -39,6 +39,7 @@
+ from vllm.v1.hisparse.binding import release_hisparse_profiling_cache
+ from vllm.v1.kv_cache_interface import KVCacheConfig
+ from vllm.v1.spec_decode.dynamic.utils import build_dynamic_sd_schedule_lookup
++from vllm.v1.worker.gpu import cc_target_preparation
+ from vllm.v1.worker.gpu.attn_utils import build_slot_mappings_by_layer
+ from vllm.v1.worker.gpu.block_table import BlockTables
+ from vllm.v1.worker.gpu.cp_utils import prepare_dcp_local_seq_lens
+@@ -602,6 +603,11 @@
+     ) -> None:
+         """Capture CUDA graphs for model forward pass."""
+         self.use_aux_hidden_state_outputs = use_aux_hidden_state_outputs
++        self.target_preparation = cc_target_preparation.create(
++            self, model, model_state, input_buffers, block_tables, attn_groups,
++            kv_cache_config, pcp_manager, has_lora)
++        capture_preparation = False
++        capture_verification = False
+         if self.use_breakable_cg:
+             self.init_breakable_cg_runner(model)
+ 
+@@ -713,7 +719,21 @@
+             # Capture with dummy rows marked as padding.
+             input_buffers.is_padding.fill_(True)
+ 
++            preparation = None
++            verification_entry = None
++            if capture_preparation:
++                preparation = self.target_preparation.prepare(desc)
++                if capture_verification:
++                    verification_entry = self.target_verification.prepare(desc)
++                if not warmup:
++                    plans = (self.target_verification.plans if capture_verification
++                             else self.target_preparation.plans)
++                    plans[desc] = preparation
++
+             def forward_fn(cg_mode: CUDAGraphMode) -> None:
++                nonlocal attn_metadata
++                if preparation is not None:
++                    attn_metadata = preparation.run()
+                 batch_descriptor = None
+                 if cg_mode == CUDAGraphMode.PIECEWISE:
+                     batch_descriptor = BatchDescriptor(
+@@ -744,10 +764,34 @@
+                     return None
+ 
+                 store_capture_output(num_tokens, model_output)
++                if verification_entry is not None:
++                    verification_entry.capture()
+ 
+             return forward_fn
+ 
+         super().capture(create_forward_fn, progress_bar_desc)
++        if self.target_preparation is not None:
++            capture_preparation = True
++            saved = (self.graphs, self._capture_descs, self._max_full_descs_to_capture,
++                     self._capture_mem_samples)
++            self.graphs = self.target_preparation.graphs
++            self._capture_descs = {CUDAGraphMode.FULL: [
++                desc for desc in saved[1].get(CUDAGraphMode.FULL, [])
++                if cc_target_preparation.supports(desc)]}
++            # Measure every alternate during profiling; native extrapolation covers only native graphs.
++            self._max_full_descs_to_capture = None
++            self._capture_mem_samples = None
++            try:
++                super().capture(create_forward_fn, "Capturing target preparation")
++                if getattr(self, "target_verification", None) is not None:
++                    capture_verification = True
++                    self.graphs = self.target_verification.graphs
++                    super().capture(create_forward_fn, "Capturing target verification")
++                    self.target_verification.freeze()
++            finally:
++                (self.graphs, self._capture_descs, self._max_full_descs_to_capture,
++                 self._capture_mem_samples) = saved
++            self.target_preparation.freeze()
+ 
+     def run_fullgraph(
+         self, desc: BatchExecutionDescriptor
+--- a/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/model_runner.py
++++ b/usr/local/lib/python3.12/dist-packages/vllm/v1/worker/gpu/model_runner.py
+@@ -183,6 +183,8 @@
+ )
+ from vllm.v1.worker.workspace import lock_workspace, use_workspace_lane
+ 
++from vllm.v1.worker.gpu import cc_target_verification
++
+ logger = init_logger(__name__)
+ 
+ 
+@@ -1054,6 +1056,7 @@
+                     input_buffers = self.input_buffers
+                     if self.pcp_manager is not None:
+                         input_buffers = self.pcp_manager.input_buffers
++                    self.cudagraph_manager.target_verification = cc_target_verification.create(self)
+                     self.cudagraph_manager.capture(
+                         self.model,
+                         self.model_state,
+@@ -1580,6 +1583,11 @@
+         input_batch: InputBatch,
+         grammar_output: GrammarOutput | None,
+     ) -> tuple[SamplerOutput, torch.Tensor, torch.Tensor]:
++        verification = getattr(self.cudagraph_manager, "target_verification", None)
++        if verification is not None:
++            sampled = verification.consume(self, hidden_states, input_batch, grammar_output)
++            if sampled is not None:
++                return sampled, sampled.num_sampled, sampled.num_rejected
+         shard_metadata = None
+         global_input_batch = input_batch
+         if self.batch_sharder is not None:
+@@ -1705,6 +1713,9 @@
+         valid_dummy_state_slots: bool = False,
+         randomize_inputs: bool = False,
+     ) -> ModelRunnerOutput | IntermediateTensors | None:
++        verification = getattr(self.cudagraph_manager, "target_verification", None)
++        if verification is not None:
++            verification.begin_step()
+         if not dummy_run:
+             # Update the request states.
+             self.update_pp_decode_requests()
+@@ -1866,8 +1877,16 @@
+                 num_reqs_padded=input_batch.num_reqs_after_padding,
+             )
+ 
+-        attn_metadata = None
+-        slot_mappings_by_layer = None
++        target_preparation = getattr(self.cudagraph_manager, "target_preparation", None)
++        use_target_preparation = (target_preparation is not None and target_preparation.select(
++            self, batch_desc, input_batch, block_tables, slot_mappings, dummy_run))
++        use_target_verification = (use_target_preparation and verification is not None
++                                   and verification.select(self, batch_desc, input_batch, dummy_run, is_profile))
++        target_plan = (verification.plans[batch_desc] if use_target_verification else
++                       target_preparation.plans[batch_desc] if use_target_preparation else None)
++        attn_metadata = target_plan.metadata if target_plan is not None else None
++        slot_mappings_by_layer = (target_plan.slot_mappings_by_layer
++                                  if target_plan is not None else None)
+         ubatch_state: UBatchState | None = None
+         if batch_desc.num_ubatches > 1:
+             assert self.ubatch_runner is not None
+@@ -1879,7 +1898,7 @@
+                 cg_mode=batch_desc.cg_mode,
+                 for_capture=dummy_run and batch_desc.cg_mode == CUDAGraphMode.FULL,
+             )
+-        elif not (dummy_run and skip_attn_for_dummy_run):
++        elif not use_target_preparation and not (dummy_run and skip_attn_for_dummy_run):
+             assert slot_mappings is not None
+             slot_mappings_by_layer = build_slot_mappings_by_layer(
+                 slot_mappings, self.kv_cache_config
+@@ -1991,7 +2010,12 @@
+             self.kv_connector.pre_forward(
+                 **connector_kwargs, attn_metadata=attn_metadata
+             )
+-            model_output = self.cudagraph_manager.run_fullgraph(batch_desc)
++            if use_target_verification:
++                model_output = verification.replay(batch_desc, input_batch)
++            elif use_target_preparation:
++                model_output = target_preparation.replay(self.cudagraph_manager, batch_desc)
++            else:
++                model_output = self.cudagraph_manager.run_fullgraph(batch_desc)
+         else:
+             # For piecewise and eager mode, just call model().
+             batch_descriptor = BatchDescriptor(

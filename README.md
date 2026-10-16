@@ -42,6 +42,8 @@ artifacts come from a checksum-pinned [public build artifact](https://github.com
 in this repository; generated binaries remain outside Git. Runtime source and
 build inputs are maintained here. Benchmarks, experiment validation, and their
 results live in the private CC lab.
+The [B200 patch review guide](b200/patches/README.md) describes the ordered
+inference changes and their dependencies.
 The runtime requires the qualified TP4 configuration, normal CC mode, driver
 595.71.05, model revision, precision, software, and measurement policy. A
 compatibility mismatch fails before loading weights instead of retuning at boot.
