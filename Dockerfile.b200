@@ -40,8 +40,8 @@ RUN set -eu; \
     done; \
     rm -rf /tmp/tinfoil-b200-patches
 
-ARG B200_KERNEL_BUNDLE_SHA256=16b879a7ba3856fa7f846bd03215a87aef151da2b258a4382b411927875e2d25
-ADD https://github.com/tinfoilsh/confidential-deepseek-v4-1-flash/releases/download/b200-kernels-v3/b200-normal-cc-kernels-r3.tar.gz /tmp/b200-kernels.tar.gz
+ARG B200_KERNEL_BUNDLE_SHA256=6537581894af3b1423124ef371eab9b16fe370ce03511f7365354255e0c748db
+ADD https://github.com/tinfoilsh/confidential-deepseek-v4-1-flash/releases/download/b200-kernels-v4/b200-normal-cc-kernels-r4.tar.gz /tmp/b200-kernels.tar.gz
 RUN echo "${B200_KERNEL_BUNDLE_SHA256}  /tmp/b200-kernels.tar.gz" | sha256sum -c - && \
     mkdir -p /opt/tinfoil && \
     tar -xzf /tmp/b200-kernels.tar.gz -C /opt/tinfoil && rm /tmp/b200-kernels.tar.gz
@@ -49,7 +49,7 @@ COPY scripts/b200_bundle.py scripts/b200_runtime.py scripts/b200_finalist.py /op
 COPY b200/build.json /opt/tinfoil/b200-finalist-build.json
 COPY b200/runtime-build.json /opt/tinfoil/b200-runtime-build.json
 COPY scripts/b200-entrypoint.sh /opt/tinfoil/entrypoint.sh
-RUN python3 -c 'import hashlib,json; from pathlib import Path; root=Path("/usr/local/lib/python3.12/dist-packages"); manifest=json.loads(Path("/opt/tinfoil/b200-finalist-bundle/manifest.json").read_text()); sources=manifest["identity"]["software"]["sources"]; actual={str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for package in ("vllm","flashinfer") for p in (root/package).rglob("*.py")}; assert actual == sources, "The qualified inference sources differ"' && \
+RUN python3 -c 'import hashlib,json; from pathlib import Path; root=Path("/usr/local/lib/python3.12/dist-packages"); manifest=json.loads(Path("/opt/tinfoil/b200-finalist-bundle/manifest.json").read_text()); sources=manifest["identity"]["software"]["sources"]; actual={str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for package in ("vllm","flashinfer") for p in (root/package).rglob("*.py")}; assert actual == sources, "The qualified inference sources differ"; assert hashlib.sha256(Path("/opt/tinfoil/compiled/flashinfer_globaltimer.so").read_bytes()).hexdigest() == manifest["identity"]["software"]["timer_library_sha256"], "The qualified timer library differs"' && \
     python3 -m py_compile /opt/tinfoil/b200_bundle.py /opt/tinfoil/b200_runtime.py /opt/tinfoil/b200_finalist.py && \
     chmod 755 /opt/tinfoil/entrypoint.sh
 ENV FLASHINFER_GLOBALTIMER_LIBRARY=/opt/tinfoil/compiled/flashinfer_globaltimer.so

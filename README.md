@@ -39,7 +39,7 @@ The B200/TDX variant uses `Dockerfile.b200` and `tinfoil-config.b200.yml` with
 the same `DeepSeek-V4.1-Flash-1017@1bae0e10` checkpoint. It
 reuses compact native prefill graphs, captured target preparation and sampling,
 and processor metadata mirrors. Its 198 measured kernel choices and compiled
-artifacts come from a checksum-pinned [public build artifact](https://github.com/tinfoilsh/confidential-deepseek-v4-1-flash/releases/tag/b200-kernels-v3)
+artifacts come from a checksum-pinned [public build artifact](https://github.com/tinfoilsh/confidential-deepseek-v4-1-flash/releases/tag/b200-kernels-v4)
 in this repository; generated binaries remain outside Git. Runtime source and
 build inputs are maintained here. Benchmarks, experiment validation, and their
 results live in the private CC lab.
