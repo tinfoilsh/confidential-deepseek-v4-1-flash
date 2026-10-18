@@ -13,8 +13,8 @@ from b200_bundle import digest
 SITE = Path("/usr/local/lib/python3.12/dist-packages")
 BUILD = Path("/opt/tinfoil/b200-runtime-build.json")
 CACHE_ROOT = Path("/root")
-MODEL_REVISION = "dba1be0a40aa45a94ad051997016db3960a90277"
-MODEL_PACK = "mpk-159977c3efb94d1eba09025f71af1d1d55d6a58c58e4165b4587ec83166fa385"
+MODEL_REVISION = "1bae0e1088993b9b82de08f59de5be5a34e42170"
+MODEL_PACK = "mpk-6c4a2b637f7f45d9e48d1bdc38c12e0454584f48d3759851f7ee4471cd90b2e7"
 QUALIFIED_POLICY = {"timer": "globaltimer", "timer_boundary": "captured_kernel_v1",
                     "warmup": 3, "repeat": 10, "l2_cache_policy": "cold", "cuda_graph_profile_replays": 1}
 PACKAGE_NAMES = {"vllm", "torch", "triton", "transformers", "flashinfer-python", "apache-tvm-ffi"}

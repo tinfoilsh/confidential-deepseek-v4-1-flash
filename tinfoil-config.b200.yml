@@ -4,8 +4,8 @@ memory: 786432
 gpus: 4
 models:
 - name: deepseek-v4-1-flash
-  repo: deepseek-ai/DeepSeek-V4.1-Flash@dba1be0a40aa45a94ad051997016db3960a90277
-  mpk: 159977c3efb94d1eba09025f71af1d1d55d6a58c58e4165b4587ec83166fa385_510313381888_27d8d4f7-446a-5f31-ae99-2339b36c2dde
+  repo: deepseek-ai/DeepSeek-V4.1-Flash-1017@1bae0e1088993b9b82de08f59de5be5a34e42170
+  mpk: 6c4a2b637f7f45d9e48d1bdc38c12e0454584f48d3759851f7ee4471cd90b2e7_510311071744_27a6c072-8626-550d-a130-c888e25902cb
   schema: 2
 containers:
 - name: deepseek-v4-1-flash
@@ -40,7 +40,7 @@ containers:
   - VLLM_USE_BREAKABLE_CUDAGRAPH: '1'
   command:
   - --model
-  - /tinfoil/mpk/mpk-159977c3efb94d1eba09025f71af1d1d55d6a58c58e4165b4587ec83166fa385
+  - /tinfoil/mpk/mpk-6c4a2b637f7f45d9e48d1bdc38c12e0454584f48d3759851f7ee4471cd90b2e7
   - --tokenizer-mode
   - deepseek_v41
   - --tensor-parallel-size
@@ -76,7 +76,7 @@ containers:
   - --speculative-config
   - '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"block","enable_adaptive_verification":false}'
   - --override-generation-config
-  - '{"temperature":1.0,"top_p":0.95}'
+  - '{"temperature":1.0,"top_p":1.0}'
   - --cudagraph-metrics
   tmpfs:
     /run/lock: size=16m,mode=1777,noexec,nosuid,nodev
