@@ -1,14 +1,14 @@
 # confidential-deepseek-v4-1-flash
 
-vLLM 0.31.0 image for DeepSeek-V4.1-Flash on 4x NVIDIA B300, 1M-token context,
+vLLM 0.31.0 image for DeepSeek-V4.1-Flash-1017 on 4x NVIDIA B300, 1M-token context,
 text and image input.
 
 Follows the [upstream vLLM recipe](https://recipes.vllm.ai/deepseek-ai/DeepSeek-V4.1-Flash)
 (DSpark speculative decoding enabled). Deviations:
 
 - Base image digest-pinned for reproducible, attestable builds.
-- Weights pinned to `deepseek-ai/DeepSeek-V4.1-Flash@dba1be0a` and served
-  from a verified model pack.
+- Weights pinned to `deepseek-ai/DeepSeek-V4.1-Flash-1017@1bae0e10` and served
+  from a verified model pack under the `deepseek-v4-1-flash` API model name.
 - Python OpenAI frontend (the recipe's `VLLM_USE_RUST_FRONTEND=1` is not set).
 - Engram tables kept on GPU (`--engram-config` with `cpu_offload: false`; the
   default offloads them to host memory).
@@ -35,7 +35,8 @@ The configuration prioritizes interactive coding at concurrency 1–8. Static-fi
 verification trades some throughput at concurrency 32 and short-prompt
 time-to-first-token for those gains.
 
-The B200/TDX variant uses `Dockerfile.b200` and `tinfoil-config.b200.yml`. It
+The B200/TDX variant uses `Dockerfile.b200` and `tinfoil-config.b200.yml`, retaining
+the qualified `DeepSeek-V4.1-Flash@dba1be0a` checkpoint. It
 reuses compact native prefill graphs, captured target preparation and sampling,
 and processor metadata mirrors. Its 198 measured kernel choices and compiled
 artifacts come from a checksum-pinned [public build artifact](https://github.com/tinfoilsh/confidential-deepseek-v4-1-flash/releases/tag/b200-kernels-v2)
