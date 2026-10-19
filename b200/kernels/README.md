@@ -31,8 +31,35 @@ The initial CPU experiment rebuilt all 264 specializations. Their complete
 objects. The surrounding host objects differed; whole-object reproducibility
 and GPU correctness have not been established.
 
-The remaining release work is to declare the Triton source specializations,
-build the supporting libraries, assemble the complete cache from those inputs,
-and qualify the resulting image. The 198 FlashInfer selections alone do not
-describe the separate Triton compilation inventory. Archived Triton IR can be
-used for compiler diagnostics, but is not a substitute for a source-based recipe.
+`triton-example.json` and `b200_compile_triton.py` demonstrate the corresponding
+source-based build for one real logit-bias specialization. The recipe declares
+its argument types, constants, alignment attributes, compiler options, source
+hashes, and exact NVIDIA assembler. It builds through Triton's `ASTSource` API
+with an explicit target and no device initialization or kernel launch:
+
+```sh
+python scripts/b200_compile_triton.py --output /tmp/triton-build \
+  --ptxas /usr/local/cuda/bin/ptxas
+```
+
+This requires the pinned CUDA 13.0.88 assembler. The example's GPU instruction
+section matches the archived kernel; debugging information contains build-path
+differences. Native Triton cache group files contain absolute paths, so release
+assembly must build at the intended cache location or explicitly relocate those
+records when installing the cache.
+
+The CPU investigation also rebuilt all 274 archived Triton kernels from their
+text IR with matching GPU instruction sections. This diagnoses compiler support;
+it does not provide the missing Python specialization arguments. The existing
+archive does not record those arguments. Triton's specialization serializer and
+compilation hooks can record them during future development, with explicit
+factory inputs for functions created inside other functions.
+
+The timer extension and Triton driver helper were also compiled from their
+existing sources on the CPU host. GPU execution, whole-object reproducibility,
+runtime cache hits, and a complete image rebuild remain unverified.
+
+The remaining release work is to complete the Triton source inventory, assemble
+the full cache from source build outputs, and qualify that exact image. The 198
+FlashInfer selections alone do not describe the separate Triton inventory.
+Archived IR is not a substitute for a source-based recipe.
