@@ -12,8 +12,9 @@ Follows the [upstream vLLM recipe](https://recipes.vllm.ai/deepseek-ai/DeepSeek-
 - Python OpenAI frontend (the recipe's `VLLM_USE_RUST_FRONTEND=1` is not set).
 - Engram tables kept on GPU (`--engram-config` with `cpu_offload: false`; the
   default offloads them to host memory).
-- TP4 with 56 CPUs and 768 GiB RAM, FP8 MLA KV cache, and static five-token
-  DSpark verification. CPU KV offloading is disabled.
+- TP4 with 56 CPUs and 768 GiB RAM on B300, or 32 CPUs and 512 GiB RAM on B200.
+  FP8 MLA KV cache and static five-token DSpark verification. CPU KV offloading
+  is disabled.
 - Explicit CPU/GPU transfers for CC, private text-input staging, and deferred
   reply readback. Unsupported request paths use the native implementation.
 - Native expert tactics selected for B300 target batches of 6–24 rows;
