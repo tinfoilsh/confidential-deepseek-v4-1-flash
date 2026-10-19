@@ -4,6 +4,33 @@ This is a CPU build prototype. The production Dockerfile still consumes the
 qualified `b200-kernels-v4` archive. These outputs have not been executed on a
 GPU and are not a qualified replacement for that archive.
 
+The optional build target compiles all declared inputs inside the pinned vLLM
+base image and exports artifacts to a new local directory:
+
+```sh
+docker build --platform linux/amd64 -f b200/kernels/Dockerfile \
+  --output type=local,dest=/tmp/b200-source-build .
+```
+
+Compilation steps run without network access or GPU devices. This exports 264
+CuTe kernels, one Triton example, and both helper libraries. It does not build a
+complete inference image. The production release workflow does not use it.
+
+With `pyelftools==0.33` installed in a virtual environment, compare the exported
+payloads against the existing public `b200-kernels-v4` archive:
+
+```sh
+python scripts/b200_compare_kernels.py \
+  --reference /tmp/b200-normal-cc-kernels-r4.tar.gz \
+  --artifacts /tmp/b200-source-build --report /tmp/b200-comparison.json
+```
+
+The comparison checks the reference archive's checksum and all CuTe objects.
+For Triton, it compares each supplied kernel against reference kernels with the
+same name and reports both the supplied and total reference counts. A matching
+GPU payload does not verify runtime argument specialization, host wrapper
+behavior, cache reuse, or correctness on hardware.
+
 `choices.json` is the original 198-entry FlashInfer selection, byte-identical
 to the qualified cache. Its hash matches `selected_cache_sha256` in
 `../build.json`. The 196 inherited records retain their incomplete measurement
@@ -26,10 +53,12 @@ versions. The output directory must be new. Source or compiler mismatches fail
 before compilation. The output includes objects, native cache metadata, and a
 build manifest with the input recipe hash and each generated file's hash.
 
-The initial CPU experiment rebuilt all 264 specializations. Their complete
+The CPU experiments rebuilt all 264 specializations, including inside the
+pinned release environment. Their complete
 `.lrodata` sections, including embedded GPU programs, matched the archived
 objects. The surrounding host objects differed; whole-object reproducibility
-and GPU correctness have not been established.
+and GPU correctness have not been established. The native cache metadata
+matched the reference when built at the image's installed package paths.
 
 `triton-example.json` and `b200_compile_triton.py` demonstrate the corresponding
 source-based build for one real logit-bias specialization. The recipe declares
@@ -71,6 +100,9 @@ hashes. The Triton helper uses its native cache layout. All three builders are
 standalone commands intended for fresh processes and new output directories.
 Source hashes and selected compiler versions are checked, but these recipes are
 not a complete dependency lock; release assembly must also pin the build image.
+CuTe's host wrapper export uses the build CPU. The pinned compiler rejects an
+explicit host target with TVM-FFI export, so pinning a container alone does not
+establish portable or reproducible host wrappers.
 GPU execution, whole-object reproducibility, runtime cache hits, and a complete
 image rebuild remain unverified.
 
