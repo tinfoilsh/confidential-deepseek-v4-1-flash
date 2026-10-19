@@ -55,9 +55,24 @@ archive does not record those arguments. Triton's specialization serializer and
 compilation hooks can record them during future development, with explicit
 factory inputs for functions created inside other functions.
 
-The timer extension and Triton driver helper were also compiled from their
-existing sources on the CPU host. GPU execution, whole-object reproducibility,
-runtime cache hits, and a complete image rebuild remain unverified.
+`helpers.json` and `b200_compile_helpers.py` build the timer extension and Triton
+driver helper from their existing sources. They require a coherent CUDA 13.0
+development toolkit, including its link-time driver stub and `libcudart.so`
+linker name. The stub is used only for linking; the driver helper is not loaded.
+
+```sh
+python scripts/b200_compile_helpers.py --output /tmp/helpers-build \
+  --cuda-home /usr/local/cuda-13.0 \
+  --cuda-stubs /usr/local/cuda-13.0/targets/x86_64-linux/lib/stubs
+```
+
+The helper manifest records the host compiler identities and both library
+hashes. The Triton helper uses its native cache layout. All three builders are
+standalone commands intended for fresh processes and new output directories.
+Source hashes and selected compiler versions are checked, but these recipes are
+not a complete dependency lock; release assembly must also pin the build image.
+GPU execution, whole-object reproducibility, runtime cache hits, and a complete
+image rebuild remain unverified.
 
 The remaining release work is to complete the Triton source inventory, assemble
 the full cache from source build outputs, and qualify that exact image. The 198
