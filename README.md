@@ -55,16 +55,23 @@ Build the variant directly; the Dockerfile downloads and verifies its bundle:
 docker build -f Dockerfile.b200 -t deepseek-b200 .
 ```
 
-Run the **Tinfoil Release** workflow from the source branch with a base `version` and a `variant`
-(`b200` or `b300`). For example, `v0.0.14` with `b200` publishes GitHub release
-`v0.0.14+b200` and container tag `0.0.14-b200`; `v0.0.15-rc.1` produces
-`v0.0.15-rc.1+b200` as a prerelease. The workflow selects the variant's Dockerfile
-and pins its image digest into the tagged `tinfoil-config.yml` before measurement
-and attestation. Both variants use the same source branch and can be released
-independently. Published tags are never replaced, and releases do not promote
-GitHub latest or publish shared container aliases. Freshness renewal selects
-the full release tag, including its variant.
+The `throughput` variant is a B300-only background-serving profile. It uses the
+same image and TP4 resource shape as `b300`, but switches to adaptive one-token
+DSpark, 1,024 engine sequences, 2,048 graph capture, and stream interval 16.
+It is intended for latency-tolerant background traffic. Cap client/admission
+concurrency at 128-160 for the supported freshness/throughput trade-off and use
+a 900s request timeout. It is not promoted to latest.
 
-Both variants build from public inputs. The release workflow uses the standard
+Run the **Tinfoil Release** workflow from the source branch with a base `version` and a `variant`
+(`b200`, `b300`, or `throughput`). For example, `v0.0.14` with `b200` publishes
+GitHub release `v0.0.14+b200` and container tag `0.0.14-b200`;
+`v0.0.15-rc.1` produces `v0.0.15-rc.1+b200` as a prerelease. The workflow selects
+the variant's Dockerfile and pins its image digest into the tagged
+`tinfoil-config.yml` before measurement and attestation. All variants use the same
+source branch and can be released independently. Published tags are never
+replaced, and releases do not promote GitHub latest or publish shared container
+aliases. Freshness renewal selects the full release tag, including its variant.
+
+All variants build from public inputs. The release workflow uses the standard
 repository token; no private-lab credential is required. Kernel checksums and
 compatibility checks remain enforced by the build and runtime.
