@@ -1,8 +1,8 @@
 # Tinfoil Containers release workflow (phase 1 — initiate a release).
 #
 # Trigger this workflow from a branch via "Run workflow" and provide the
-# version and GPU variant. It builds the image, selects and pins tinfoil-config.yml,
-# creates the release tag, and then dispatches phase 2 in
+# version and serving/GPU variant. It builds the image, selects and pins
+# tinfoil-config.yml, creates the release tag, and then dispatches phase 2 in
 # `tinfoil-release-publish.yml` to attest the image and publish the GitHub release.
 
 name: Tinfoil Release
@@ -17,13 +17,14 @@ on:
         required: true
         type: string
       variant:
-        description: 'GPU variant'
+        description: 'Serving/GPU variant (b300-throughput is B300-only)'
         required: true
         type: choice
         default: b300
         options:
           - b300
           - b200
+          - b300-throughput
 
 concurrency:
   group: tinfoil-container-release-${{ inputs.version }}+${{ inputs.variant }}
@@ -65,7 +66,8 @@ jobs:
           case "$VARIANT" in
             b300) DOCKERFILE=Dockerfile; CONFIG=tinfoil-config.yml ;;
             b200) DOCKERFILE=Dockerfile.b200; CONFIG=tinfoil-config.b200.yml ;;
-            *) echo "::error::Unsupported GPU variant"; exit 1 ;;
+            b300-throughput) DOCKERFILE=Dockerfile; CONFIG=tinfoil-config.b300-throughput.yml ;;
+            *) echo "::error::Unsupported variant"; exit 1 ;;
           esac
           RELEASE_TAG="$VERSION+$VARIANT"
           IMAGE_TAG="${VERSION#v}-$VARIANT"
