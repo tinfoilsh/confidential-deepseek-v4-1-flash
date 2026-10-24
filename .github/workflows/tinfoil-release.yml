@@ -17,14 +17,14 @@ on:
         required: true
         type: string
       variant:
-        description: 'Serving/GPU variant (throughput is B300-only)'
+        description: 'Serving/GPU variant (b300-throughput is B300-only)'
         required: true
         type: choice
         default: b300
         options:
           - b300
           - b200
-          - throughput
+          - b300-throughput
 
 concurrency:
   group: tinfoil-container-release-${{ inputs.version }}+${{ inputs.variant }}
@@ -66,7 +66,7 @@ jobs:
           case "$VARIANT" in
             b300) DOCKERFILE=Dockerfile; CONFIG=tinfoil-config.yml ;;
             b200) DOCKERFILE=Dockerfile.b200; CONFIG=tinfoil-config.b200.yml ;;
-            throughput) DOCKERFILE=Dockerfile; CONFIG=tinfoil-config.throughput.yml ;;
+            b300-throughput) DOCKERFILE=Dockerfile; CONFIG=tinfoil-config.b300-throughput.yml ;;
             *) echo "::error::Unsupported variant"; exit 1 ;;
           esac
           RELEASE_TAG="$VERSION+$VARIANT"
