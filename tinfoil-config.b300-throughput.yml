@@ -4,7 +4,9 @@
 # stream interval 16. This is the throughput-oriented background unit, not the
 # interactive fast profile. Cap client/admission concurrency at 128-160 for the
 # supported freshness/throughput trade-off and use a 900s request timeout.
-# This variant is not promoted to latest.
+# The first cache-less boot can spend more than 120 minutes in FlashInfer
+# autotune and graph capture, so the health grace is 240 minutes. This variant
+# is not promoted to latest.
 cvm-version: 0.14.13
 cpus: 56
 memory: 786432
@@ -34,7 +36,7 @@ containers:
       - VLLM_CACHE_ROOT: "/root/.cache/vllm"
       - TORCH_EXTENSIONS_DIR: "/root/.cache/deepseek-stock-torch-extensions"
       - NUMBA_CACHE_DIR: "/root/numba-cache"
-      - VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+      - VLLM_ENGINE_READY_TIMEOUT_S: "7200"
     command:
       [
         "--model",
@@ -85,7 +87,7 @@ containers:
       test: ["CMD", "curl", "-sf", "http://localhost:8001/health"]
       interval: 30s
       timeout: 5s
-      start_period: 120m
+      start_period: 240m
 
 shim:
   upstream-port: 8001
