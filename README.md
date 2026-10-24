@@ -55,19 +55,19 @@ Build the variant directly; the Dockerfile downloads and verifies its bundle:
 docker build -f Dockerfile.b200 -t deepseek-b200 .
 ```
 
-The `b300-throughput` variant is a B300-only background profile. It uses adaptive
-one-token DSpark, 1,024 sequences, 2,048 graph capture, and `--stream-interval 16`;
-cap clients at 128–160 with a 900s request timeout. It is not promoted to latest.
+The `b300-throughput` variant is a B300-only background profile: adaptive one-token
+DSpark, 1,024 sequences, 2,048 graph capture, and `--stream-interval 16`. Cap
+clients at 128–160 and use a 900s request timeout.
 
 Run the **Tinfoil Release** workflow from the source branch with a base `version` and a `variant`
-(`b200`, `b300`, or `b300-throughput`). For example, `v0.0.14` with `b200`
-publishes GitHub release `v0.0.14+b200` and container tag `0.0.14-b200`;
-`v0.0.15-rc.1` produces `v0.0.15-rc.1+b200` as a prerelease. The workflow selects
-the variant's Dockerfile and pins its image digest into the tagged
-`tinfoil-config.yml` before measurement and attestation. All variants use the same
-source branch and can be released independently. Published tags are never
-replaced, and releases do not promote GitHub latest or publish shared container
-aliases. Freshness renewal selects the full release tag, including its variant.
+(`b200`, `b300`, or `b300-throughput`). For example, `v0.0.14` with `b200` publishes GitHub release
+`v0.0.14+b200` and container tag `0.0.14-b200`; `v0.0.15-rc.1` produces
+`v0.0.15-rc.1+b200` as a prerelease. The workflow selects the variant's Dockerfile
+and pins its image digest into the tagged `tinfoil-config.yml` before measurement
+and attestation. All variants use the same source branch and can be released
+independently. Published tags are never replaced, and releases do not promote
+GitHub latest or publish shared container aliases. Freshness renewal selects
+the full release tag, including its variant.
 
 All variants build from public inputs. The release workflow uses the standard
 repository token; no private-lab credential is required. Kernel checksums and
