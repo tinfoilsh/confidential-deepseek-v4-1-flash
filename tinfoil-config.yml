@@ -1,4 +1,11 @@
-cvm-version: 0.14.15
+# B300 background-serving profile.
+#
+# Adaptive one-token DSpark, 1,024 engine sequences, 2,048 graph capture, and
+# stream interval 16. This is the throughput-oriented background unit, not the
+# interactive fast profile. Cap client/admission concurrency at 128-160 for the
+# supported freshness/throughput trade-off and use a 900s request timeout.
+# This variant is not promoted to latest.
+cvm-version: 0.14.13
 cpus: 56
 memory: 786432
 gpus: 4
@@ -11,7 +18,7 @@ models:
 
 containers:
   - name: "deepseek-v4-1-flash"
-    image: "ghcr.io/tinfoilsh/confidential-deepseek-v4-1-flash@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    image: "ghcr.io/tinfoilsh/confidential-deepseek-v4-1-flash@sha256:170319015640e0f0ff02c00a642fb797411a9fb83226044fa02fca734db96f92" # v0.0.9+b300-throughput
     runtime: nvidia
     gpus: all
     restart: always
@@ -59,15 +66,17 @@ containers:
         "8001",
         "--disable-custom-all-reduce",
         "--compilation-config",
-        '{"mode":0,"cudagraph_mode":"FULL_DECODE_ONLY","pass_config":{"fuse_allreduce_rms":false}}',
+        '{"mode":0,"cudagraph_mode":"FULL_DECODE_ONLY","pass_config":{"fuse_allreduce_rms":false},"max_cudagraph_capture_size":2048}',
         "--max-model-len",
         "1048576",
         "--max-num-seqs",
-        "64",
+        "1024",
         "--speculative-config",
-        '{"method":"dspark","num_speculative_tokens":5,"draft_sample_method":"probabilistic","rejection_sample_method":"block","enable_adaptive_verification":false}',
+        '{"method":"dspark","num_speculative_tokens":1,"draft_sample_method":"probabilistic","rejection_sample_method":"block","enable_adaptive_verification":true}',
         "--override-generation-config",
         '{"temperature":1.0,"top_p":1.0}',
+        "--stream-interval",
+        "16",
       ]
     tmpfs:
       /tmp: size=16g,mode=1777,exec
