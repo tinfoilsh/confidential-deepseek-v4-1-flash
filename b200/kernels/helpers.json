@@ -1,0 +1,20 @@
+{
+  "schema": "tinfoil-b200-helpers-v1",
+  "torch_version": "2.13.0+cu130",
+  "triton_version": "3.7.1",
+  "cuda_architectures": "10.0",
+  "cuda_sources": {
+    "bin/nvcc": "b8e2347d9d7fcadf8812a27324d515de99d033d3e48611811ece7e66d7895f8a",
+    "bin/ptxas": "daba837a68265cae38c832d13399b61dab811891de9b8914defddef143b849f2",
+    "include/cuda_runtime.h": "e1ef0a26e49f1776004fde1217e2fa52605adb139381ba79fe919145d993bb62"
+  },
+  "sources": {
+    "flashinfer/utils.py": "689d898e4e111200699ed8f329fb864dacb17cf9ddc61076ed5a1bfba4436804",
+    "triton/backends/nvidia/driver.c": "835f068cf517d237dc62be91275261e260c2bae985a9242fd28866303c1e5a60",
+    "triton/runtime/build.py": "26c6ddd4dba3534ce54790f12d2b75729f51e467c48b2f740dd62b7c75a85b39",
+    "torch/utils/cpp_extension.py": "1494e212b205f4485267c7a89017929dca30f748ae55aec792557d460a83447a",
+    "triton/runtime/cache.py": "4e130852ee5ed85350fa6298ba14e24faf97ee6e8c61045e4206f1fc7c124149",
+    "triton/backends/nvidia/driver.py": "992ba21e12ee170a904f3a1caca24a78ce3dd66b661087faea5973b995480f63"
+  },
+  "cuda_stub_sha256": "67f959d1ab945005774464fcbf5a10722f97d0781b5800dd8636dc56747c2735"
+}
