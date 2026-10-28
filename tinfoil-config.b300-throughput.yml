@@ -5,7 +5,7 @@
 # interactive fast profile. Cap client/admission concurrency at 128-160 for the
 # supported freshness/throughput trade-off and use a 900s request timeout.
 # This variant is not promoted to latest.
-cvm-version: 0.14.13
+cvm-version: 0.14.17
 cpus: 56
 memory: 786432
 gpus: 4
