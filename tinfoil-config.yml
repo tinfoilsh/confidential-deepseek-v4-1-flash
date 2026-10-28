@@ -11,7 +11,7 @@ models:
 
 containers:
   - name: "deepseek-v4-1-flash"
-    image: "ghcr.io/tinfoilsh/confidential-deepseek-v4-1-flash@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    image: "ghcr.io/tinfoilsh/confidential-deepseek-v4-1-flash@sha256:21685865853d82a9caef2e854a6be0422152deec749220209dc22b9640c378ea" # v0.0.10+b300
     runtime: nvidia
     gpus: all
     restart: always
