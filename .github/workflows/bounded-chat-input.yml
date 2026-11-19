@@ -1,0 +1,33 @@
+name: Bounded chat input CPU check
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  bounded-chat-input:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the B300 patch against pinned vLLM sources
+        shell: bash
+        run: |
+          # Match Dockerfile and scripts/test_bounded_chat_input.py. The test
+          # also verifies the hashes of all three downloaded files.
+          pin=db9527a46873454610df6dbedf79a36d6bf1a7f6
+          source_dir="$RUNNER_TEMP/pinned-vllm"
+          for file in vllm/exceptions.py vllm/entrypoints/openai/chat_completion/{protocol,serving}.py; do
+            mkdir -p "$source_dir/$(dirname "$file")"
+            curl --fail --silent --show-error --location --retry 2 --max-time 30 \
+              "https://raw.githubusercontent.com/vllm-project/vllm/$pin/$file" \
+              --output "$source_dir/$file"
+          done
+          python3 -m venv "$RUNNER_TEMP/bounded-chat-venv"
+          python="$RUNNER_TEMP/bounded-chat-venv/bin/python"
+          "$python" -m pip install --disable-pip-version-check 'pydantic==2.13.3'
+          "$python" scripts/test_bounded_chat_input.py "$source_dir"

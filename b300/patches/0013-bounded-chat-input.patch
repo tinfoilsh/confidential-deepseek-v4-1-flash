@@ -1,0 +1,93 @@
+--- a/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/chat_completion/protocol.py
++++ b/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/chat_completion/protocol.py
+@@ -275,6 +275,9 @@
+     min_tokens: int = 0
+     skip_special_tokens: bool = True
+     spaces_between_special_tokens: bool = True
++    max_input_tokens: Annotated[
++        int, Field(strict=True, ge=1, le=_INT64_MAX)
++    ] | None = None
+     truncate_prompt_tokens: Annotated[int, Field(ge=-1, le=_INT64_MAX)] | None = None
+     truncation_side: Literal["left", "right"] | None = Field(
+         default=None,
+@@ -562,6 +565,35 @@
+                 msg["tool_calls"] = list(tool_calls)
+         return self
+
++    @model_validator(mode="after")
++    def _validate_bounded_input(self) -> "ChatCompletionRequest":
++        if self.max_input_tokens is None:
++            if "max_input_tokens" in self.model_fields_set:
++                raise VLLMValidationError(
++                    "max_input_tokens must be a positive integer.",
++                    parameter="max_input_tokens",
++                )
++            return self
++        unsupported = {
++            "n": self.n != 1,
++            "use_beam_search": self.use_beam_search,
++            "truncate_prompt_tokens": self.truncate_prompt_tokens is not None,
++            "kv_transfer_params": self.kv_transfer_params is not None,
++            "ec_transfer_params": self.ec_transfer_params is not None,
++            "vllm_xargs": self.vllm_xargs is not None,
++            "best_of": "best_of" in (self.model_extra or {}),
++            "prompt_embeds": "prompt_embeds" in (self.model_extra or {}),
++        }
++        for name, present in unsupported.items():
++            if present:
++                raise VLLMValidationError(
++                    "n must equal 1 with max_input_tokens."
++                    if name == "n"
++                    else f"{name} is incompatible with max_input_tokens.",
++                    parameter=name,
++                )
++        return self
++
+     _grammar_from_parser: bool = PrivateAttr(default=False)
+     """CAUTION: Should only be set by the parser-engine adapter's adjust_request."""
+
+--- a/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/chat_completion/serving.py
++++ b/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/chat_completion/serving.py
+@@ -288,6 +288,42 @@
+
+         conversation, engine_inputs = result
+
++        if (limit := request.max_input_tokens) is not None:
++            # Check the final decoder-only prompt. Multimodal prompt IDs
++            # already include image placeholders, as does usage.prompt_tokens.
++            token_ids = None
++            if len(engine_inputs) == 1:
++                engine_input = engine_inputs[0]
++                kind = engine_input.get("type")
++                if (
++                    "encoder_prompt_token_ids" not in engine_input
++                    and "encoder_prompt" not in engine_input
++                ):
++                    if kind == "token":
++                        token_ids = engine_input.get("prompt_token_ids")
++                    elif kind == "multimodal":
++                        placeholders = engine_input.get("mm_placeholders")
++                        hashes = engine_input.get("mm_hashes")
++                        if (
++                            placeholders
++                            and hashes
++                            and set(placeholders) == set(hashes) == {"image"}
++                            and placeholders["image"]
++                            and len(placeholders["image"]) == len(hashes["image"])
++                        ):
++                            token_ids = engine_input.get("prompt_token_ids")
++            if not isinstance(token_ids, list):
++                return self.create_error_response(
++                    "max_input_tokens requires one tokenized decoder-only "
++                    "prompt with text or images only.",
++                    param="max_input_tokens",
++                )
++            if len(token_ids) > limit:
++                return self.create_error_response(
++                    "The rendered prompt exceeds max_input_tokens.",
++                    param="max_input_tokens",
++                )
++
+         request_id = (
+             f"chatcmpl-{self._base_request_id(raw_request, request.request_id)}"
+         )

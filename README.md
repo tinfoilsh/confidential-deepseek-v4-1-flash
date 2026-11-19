@@ -73,3 +73,42 @@ the full release tag, including its variant.
 All variants build from public inputs. The release workflow uses the standard
 repository token; no private-lab credential is required. Kernel checksums and
 compatibility checks remain enforced by the build and runtime.
+
+### Bounded chat input cap (B300)
+
+The next B300 release built from this source will include
+`b300/patches/0013-bounded-chat-input.patch`. B200 does not apply this patch:
+its inference sources must match the qualified bundle exactly. Chat requests
+on the patched build may omit `max_input_tokens`; when supplied it must be a
+positive JSON integer. The Python frontend checks the final rendered prompt
+(including any template, tool schemas, and image placeholders) before
+scheduling generation. It returns HTTP 400 rather than truncating when the
+cap is exceeded. Bounded inputs may be a single decoder-only text prompt or
+an image prompt with optional text; ambiguous modality metadata, other media,
+embeddings, multiple prompts, and encoder-decoder inputs are rejected. The
+cap uses the length of the processed `prompt_token_ids` list. vLLM already
+includes image placeholders in those IDs and in reported `prompt_tokens`,
+so they must not be added a second time. Capped requests also
+reject multiple choices, beam search, truncation, and transfer/extension
+parameters that might change how the prompt reaches the engine.
+
+The backend patch ships independently of the router. Releasing the B300 image
+does not enable bounded mode in the router, impose an output cap, or change
+the router's billing, tool, or retry policy.
+
+Pull-request CI runs the CPU-only regression check without building or
+releasing an image. To run it locally with Python, Pydantic 2, and GNU patch:
+
+```sh
+python scripts/test_bounded_chat_input.py /path/to/vllm-checkout
+```
+
+The checkout must contain `db9527a46873454610df6dbedf79a36d6bf1a7f6`. The check
+applies the patch with the Dockerfile’s GNU patch flags and exercises its
+validation and serving branch with the pinned vLLM exception class and a
+stand-in renderer and engine, including a simulated expanded image prompt.
+It doesn't run vLLM, process a real image, build either GPU image, or measure
+usage. Before enabling router mode, verify with real text and image prompts
+that a cap equal to the billed prompt count succeeds and that one token less
+fails before generation, with and without streaming. Include a prompt whose
+template renders tool schemas.

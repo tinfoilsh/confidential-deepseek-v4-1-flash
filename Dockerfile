@@ -14,17 +14,19 @@ ENV VLLM_DISABLE_UVA=1 \
 # Patches are -p1 unified diffs rooted at /; they target
 # usr/local/lib/python3.12/dist-packages/... to match the base image.
 COPY patches/ /tmp/tinfoil-patches/
+# B200 uses checksum-qualified inference sources and does not apply these patches.
+COPY b300/patches/ /tmp/tinfoil-b300-patches/
 RUN set -eux; \
     test "$VLLM_BUILD_COMMIT" = "db9527a46873454610df6dbedf79a36d6bf1a7f6"; \
     python3 -c "from importlib.metadata import version; assert version('vllm') == '0.31.0'"; \
     test -x /usr/bin/patch; \
     cd /; \
-    for p in /tmp/tinfoil-patches/*.patch; do \
+    for p in /tmp/tinfoil-patches/*.patch /tmp/tinfoil-b300-patches/*.patch; do \
         echo "Applying $(basename "$p")"; \
         /usr/bin/patch -p1 --batch --forward --no-backup-if-mismatch --fuzz=0 < "$p"; \
     done; \
     find /usr/local/lib/python3.12/dist-packages/vllm -name '__pycache__' -type d -exec rm -rf {} + || true; \
-    rm -rf /tmp/tinfoil-patches; \
+    rm -rf /tmp/tinfoil-patches /tmp/tinfoil-b300-patches; \
     python3 -c "import vllm; print('vllm', vllm.__version__, 'with tinfoil patches')"
 
 # Verify the generic artifacts and bake B300 SM103a artifacts for offline use.
